@@ -1,0 +1,81 @@
+> run_dei_mcmc(
++   dataset_names  = "sin",
++   members_count  = 1,
++   warmup_steps   = 20,
++   sampling_steps = 40,
++   refresh        = 10,
++   ensemble_path  = "results/ensemble_synth"
++ )
+Running DEI-MCMC on datasets: sin
+ Looking in data_path:      data/synthetic
+ Looking in ensemble_path:  results/ensemble_synth
+ Output will go to:         results/mcmc_draws
+ Found dataset files: sin_dataset.rds
+ Found ensemble files: linear_dataset_member01.keras, linear_dataset_member02.keras, linear_dataset_member03.keras, linear_dataset_member04.keras, piecewise_dataset_member01.keras, piecewise_dataset_member02.keras, piecewise_dataset_member03.keras, piecewise_dataset_member04.keras, quad_dataset_member01.keras, quad_dataset_member02.keras, quad_dataset_member03.keras, quad_dataset_member04.keras, sin_dataset_member01.keras, sin_dataset_member02.keras, sin_dataset_member03.keras, sin_dataset_member04.keras
+
+▶ Sampling for dataset: sin
+  Members available: sin_dataset_member01.keras, sin_dataset_member02.keras, sin_dataset_member03.keras, sin_dataset_member04.keras
+  Selecting first 1: sin_dataset_member01.keras
+   • Member: sin_dataset_member01
+2025-05-20 20:15:54.482914: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+WARNING:tensorflow:From C:\Users\thomas\DOCUME~1\VIRTUA~1\R-TENS~1\Lib\site-packages\keras\src\losses.py:2976: The name tf.losses.sparse_softmax_cross_entropy is deprecated. Please use tf.compat.v1.losses.sparse_softmax_cross_entropy instead.
+
+2025-05-20 20:15:58.038452: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE SSE2 SSE3 SSE4.1 SSE4.2 AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING:tensorflow:From C:\Users\thomas\DOCUME~1\VIRTUA~1\R-TENS~1\Lib\site-packages\keras\src\backend.py:1398: The name tf.executing_eagerly_outside_functions is deprecated. Please use tf.compat.v1.executing_eagerly_outside_functions instead.
+
+     Extracted init_vec length: 6401
+     Indices: W1[1:64], b1[65:128], W2[129:4224], ..., b4[6401]
+     Running Stan sampling (warmup=20, iter=60) ...
+
+SAMPLING FOR MODEL 'anon_model' NOW (CHAIN 1).
+Chain 1: 
+Chain 1: Gradient evaluation took 0.083979 seconds
+Chain 1: 1000 transitions using 10 leapfrog steps per transition would take 839.79 seconds.
+Chain 1: Adjust your expectations accordingly!
+Chain 1: 
+Chain 1: 
+Chain 1: WARNING: There aren't enough warmup iterations to fit the
+Chain 1:          three stages of adaptation as currently configured.
+Chain 1:          Reducing each adaptation stage to 15%/75%/10% of
+Chain 1:          the given number of warmup iterations:
+Chain 1:            init_buffer = 3
+Chain 1:            adapt_window = 15
+Chain 1:            term_buffer = 2
+Chain 1: 
+Chain 1: Iteration:  1 / 60 [  1%]  (Warmup)
+Chain 1: Iteration: 10 / 60 [ 16%]  (Warmup)
+Chain 1: Iteration: 20 / 60 [ 33%]  (Warmup)
+Chain 1: Iteration: 21 / 60 [ 35%]  (Sampling)
+Chain 1: Iteration: 30 / 60 [ 50%]  (Sampling)
+Chain 1: Iteration: 40 / 60 [ 66%]  (Sampling)
+Chain 1: Iteration: 50 / 60 [ 83%]  (Sampling)
+Chain 1: Iteration: 60 / 60 [100%]  (Sampling)
+Chain 1: 
+Chain 1:  Elapsed Time: 394.296 seconds (Warm-up)
+Chain 1:                1346.45 seconds (Sampling)
+Chain 1:                1740.75 seconds (Total)
+Chain 1: 
+     ✓ Sampling complete for sin_dataset_member01
+    ✓ Saved draws to results/mcmc_draws/sin_dataset_member01_draws.rds
+
+All done. Posterior draws are in results/mcmc_draws
+Warnmeldungen:
+1: There were 7 divergent transitions after warmup. See
+https://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them. 
+2: There were 33 transitions after warmup that exceeded the maximum treedepth. Increase max_treedepth above 10. See
+https://mc-stan.org/misc/warnings.html#maximum-treedepth-exceeded 
+3: There were 1 chains where the estimated Bayesian Fraction of Missing Information was low. See
+https://mc-stan.org/misc/warnings.html#bfmi-low 
+4: Examine the pairs() plot to diagnose sampling problems
+ 
+5: The largest R-hat is 2.31, indicating chains have not mixed.
+Running the chains for more iterations may help. See
+https://mc-stan.org/misc/warnings.html#r-hat 
+6: Bulk Effective Samples Size (ESS) is too low, indicating posterior means and medians may be unreliable.
+Running the chains for more iterations may help. See
+https://mc-stan.org/misc/warnings.html#bulk-ess 
+7: Tail Effective Samples Size (ESS) is too low, indicating posterior variances and tail quantiles may be unreliable.
+Running the chains for more iterations may help. See
+https://mc-stan.org/misc/warnings.html#tail-ess 
