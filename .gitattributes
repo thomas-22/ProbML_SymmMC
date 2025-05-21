@@ -1,1 +1,2 @@
+results/mcmc_draws/*.rds filter=lfs diff=lfs merge=lfs -text
 results/mcmc_draws/sin_1chains_draws.rds filter=lfs diff=lfs merge=lfs -text
