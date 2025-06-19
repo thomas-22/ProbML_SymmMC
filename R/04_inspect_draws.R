@@ -128,19 +128,3 @@ plot_posterior_predictive_mean <- function(draws_mat,
     ) +
     theme_minimal()
 }
-
-
-
-
-
-
-
-# Example usage (uncomment):
-#Works:
-draws_mat <- load_draws("results/mcmc_draws/sin_1chains_draws.rds")
-summarize_param(draws_mat, "sigma")
-traceplot_param(draws_mat,   "sigma")
-density_param(draws_mat,     "sigma")
-
-plot_posterior_predictive_mean(draws_mat, H1=64, H2=64, H3=32)
-

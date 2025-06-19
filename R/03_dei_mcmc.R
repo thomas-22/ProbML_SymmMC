@@ -21,14 +21,17 @@ if (inherits(cmd_path, "try-error") || !dir.exists(cmd_path)) {
 }
 options(mc.cores = parallel::detectCores())
 
-# 1. Compile Stan model (once)
+# 1. Compile Stan model
+
 stan_model_file <- "models/bnn_synth.stan"
-bnn_stan <- cmdstan_model(
-  stan_model_file,
-  force_recompile = TRUE,
-  cpp_options     = list(stan_threads = TRUE)
-)
-message("✅ CmdStan model compiled with threading enabled.")
+  bnn_stan <- cmdstan_model(
+    stan_model_file,
+    force_recompile = TRUE,
+    cpp_options     = list(stan_threads = TRUE)
+  )
+  message("CmdStan model compiled with threading enabled.")
+
+
 
 # 2. Main function
 run_dei_mcmc <- function(
@@ -181,16 +184,3 @@ run_dei_mcmc <- function(
                               length(inits_list))))
   }
 }
-
-# Example debug run
-run_dei_mcmc(
-  dataset_names     = "sin",
-  members_count     = 1,
-  warmup_steps      = 250,
-  sampling_steps    = 100,
-  refresh           = 5,
-  adapt_delta       = 0.90,
-  max_treedepth     = 12,
-  subsample_frac    = 1,
-  threads_per_chain = 12
-)
