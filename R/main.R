@@ -69,5 +69,5 @@ res <- cluster_canonical_models(
   canon_paths  = canon_list,
   threshold    = 0.1,
   metric       = "cosine",
-  output_file  = "sin_reps_cosine.txt"
+  output_file  = "results/ensemble_synth/canon_cluster_eval/sin_reps_cosine.txt"
 )

@@ -1,0 +1,4 @@
+results/ensemble_synth/sin_dataset_member01_canon.keras
+results/ensemble_synth/sin_dataset_member02_canon.keras
+results/ensemble_synth/sin_dataset_member03_canon.keras
+results/ensemble_synth/sin_dataset_member04_canon.keras
