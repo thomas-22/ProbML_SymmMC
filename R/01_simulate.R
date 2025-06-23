@@ -1,4 +1,4 @@
-# 01_simulate_wrapped.R
+# 01_simulate.R
 # Simulation of synthetic regression datasets
 # with optional saving and plotting
 

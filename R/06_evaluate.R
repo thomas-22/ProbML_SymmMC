@@ -1,4 +1,4 @@
-# 05_evaluate.R
+# 06_evaluate.R
 # ──────────────────────────────────────────────────────────────────────────────
 # Evaluates sampling methods on synthetic and real datasets:
 #  - Computes RMSE, log-PPD, and credible-interval coverage

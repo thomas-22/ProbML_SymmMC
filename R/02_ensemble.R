@@ -1,4 +1,4 @@
-# 02_ensemble_wrapped.R
+# 02_ensemble.R
 # Modular Deep Ensemble Training & Prediction Pipeline
 
 # Install/load required packages
