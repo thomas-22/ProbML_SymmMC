@@ -1,0 +1,4 @@
+results/ensemble_airfoil/airfoil_member01_canon.keras
+results/ensemble_airfoil/airfoil_member02_canon.keras
+results/ensemble_airfoil/airfoil_member03_canon.keras
+results/ensemble_airfoil/airfoil_member04_canon.keras
