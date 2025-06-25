@@ -220,39 +220,47 @@ run_dei_mcmc <- function(dataset_names      = NULL,
 }
 
 # Deep Ensemble–Initialized MCMC für UCI-Airfoil
-run_dei_mcmc_airfoil <- function(
-    members_count     = 4,     
-    init_file         = NULL,  
-    warmup_steps      = 200,
-    sampling_steps    = 800,
-    refresh           = 200,
-    adapt_delta       = 0.99,
-    max_treedepth     = 15,
-    threads_per_chain = 1,
-    
-    # this must now point to the already-scaled dataset
-    dataset_scaled_rds = "data/uci/airfoil_dataset_scaled.rds",
-    
-    ensemble_path     = "results/ensemble_airfoil",
-    output_path       = "results/mcmc_airfoil",
-    
-    H1 = 64, H2 = 64, H3 = 32
-) {
+run_dei_mcmc_airfoil <- function(members_count     = 4,
+                                 init_file         = NULL,
+                                 warmup_steps      = 200,
+                                 sampling_steps    = 800,
+                                 refresh           = 200,
+                                 adapt_delta       = 0.99,
+                                 max_treedepth     = 15,
+                                 threads_per_chain = 1,
+                                 
+                                 # this must now point to the already-scaled dataset
+                                 dataset_scaled_rds = "data/uci/airfoil_dataset_scaled.rds",
+                                 
+                                 ensemble_path     = "results/ensemble_airfoil",
+                                 output_path       = "results/mcmc_airfoil",
+                                 
+                                 H1 = 64,
+                                 H2 = 64,
+                                 H3 = 32) {
   library(purrr)
   library(keras)
   
   # ─── A) LOAD SCALED DATA ─────────────────────────────────────────────────────
   df <- readRDS(dataset_scaled_rds)
-  features  <- c("Frequency","AngleAttack","ChordLength","Velocity","SuctionThickness")
+  features  <- c("Frequency",
+                 "AngleAttack",
+                 "ChordLength",
+                 "Velocity",
+                 "SuctionThickness")
   x_scaled  <- as.matrix(df[, features])
   y_scaled  <- as.numeric(df$SoundPressure)
-  N <- nrow(x_scaled); D <- ncol(x_scaled)
+  N <- nrow(x_scaled)
+  D <- ncol(x_scaled)
   
   stan_data <- list(
-    N          = N, D          = D,
-    x          = x_scaled, 
+    N          = N,
+    D          = D,
+    x          = x_scaled,
     y          = y_scaled,
-    H1         = H1, H2         = H2, H3 = H3,
+    H1         = H1,
+    H2         = H2,
+    H3 = H3,
     num_chunks = threads_per_chain
   )
   
@@ -261,21 +269,22 @@ run_dei_mcmc_airfoil <- function(
     init_lines <- readLines(init_file)
     init_paths <- head(init_lines, members_count)
   } else {
-    all_canons <- list.files(ensemble_path,
-                             pattern = "_canon\\.keras$",
-                             full.names = TRUE)
+    all_canons <- list.files(ensemble_path, pattern = "_canon\\.keras$", full.names = TRUE)
     init_paths <- head(all_canons, members_count)
   }
   if (length(init_paths) < members_count)
-    stop("Found only ", length(init_paths),
-         " init models; need ", members_count)
+    stop("Found only ",
+         length(init_paths),
+         " init models; need ",
+         members_count)
   
   # ─── C) LOAD MODELS & ESTIMATE PRIOR SCALES ─────────────────────────────────
   keras_models <- map(init_paths, load_model_tf)
   
   estimate_scales <- function(models) {
-    Wmat <- do.call(rbind,
-                    map(models, ~ unlist(map(get_weights(.x), as.vector))))
+    Wmat <- do.call(rbind, map(models, ~ unlist(map(
+      get_weights(.x), as.vector
+    ))))
     list(
       sigma_W = max(sd(Wmat), 0.1),
       sigma_B = max(sd(Wmat), 0.1),
@@ -288,10 +297,14 @@ run_dei_mcmc_airfoil <- function(
   inits_list <- map(keras_models, function(m) {
     v <- unlist(map(get_weights(m), as.vector))
     # exactly your original splits
-    n_W1 <- H1 * D; n_b1 <- H1
-    n_W2 <- H2 * H1; n_b2 <- H2
-    n_W3 <- H3 * H2; n_b3 <- H3
-    n_w4 <- H3;       n_b4 <- 1
+    n_W1 <- H1 * D
+    n_b1 <- H1
+    n_W2 <- H2 * H1
+    n_b2 <- H2
+    n_W3 <- H3 * H2
+    n_b3 <- H3
+    n_w4 <- H3
+    n_b4 <- 1
     ends <- c(
       n_W1,
       n_W1 + n_b1,
@@ -303,12 +316,12 @@ run_dei_mcmc_airfoil <- function(
       n_W1 + n_b1 + n_W2 + n_b2 + n_W3 + n_b3 + n_w4 + n_b4
     )
     W1_flat <- v[1:ends[1]]
-    b1       <- v[(ends[1]+1):ends[2]]
-    W2       <- matrix(v[(ends[2]+1):ends[3]], H2, H1)
-    b2       <- v[(ends[3]+1):ends[4]]
-    W3       <- matrix(v[(ends[4]+1):ends[5]], H3, H2)
-    b3       <- v[(ends[5]+1):ends[6]]
-    w4       <- v[(ends[6]+1):ends[7]]
+    b1       <- v[(ends[1] + 1):ends[2]]
+    W2       <- matrix(v[(ends[2] + 1):ends[3]], H2, H1)
+    b2       <- v[(ends[3] + 1):ends[4]]
+    W3       <- matrix(v[(ends[4] + 1):ends[5]], H3, H2)
+    b3       <- v[(ends[5] + 1):ends[6]]
+    w4       <- v[(ends[6] + 1):ends[7]]
     b4       <- v[ends[7] + 1]
     
     limit <- 5   # clamp to avoid Inf
@@ -341,11 +354,24 @@ run_dei_mcmc_airfoil <- function(
     adapt_delta       = adapt_delta,
     max_treedepth     = max_treedepth
   )
-  
-  # ─── F) SAVE DRAWS ─────────────────────────────────────────────────────────────
+  # ─── F) SAVE ONE RDS PER CHAIN ───────────────────────────────────────────────
   dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
-  out_file <- file.path(output_path,
-                        sprintf("airfoil_%dchains_draws.rds", members_count))
-  saveRDS(fit$draws(), out_file)
-  message("Saved Airfoil draws to: ", out_file)
+  library(tools)  # for file_path_sans_ext
+  
+  draws_array <- fit$draws()
+  
+  for (i in seq_len(members_count)) {
+    # derive a file stem from the init model name
+    model_name  <- file_path_sans_ext(basename(init_paths[i]))
+    # extract only chain i (dimensions: iterations × 1 × variables)
+    chain_draws <- draws_array[, i, , drop = FALSE]
+    out_file    <- file.path(output_path, paste0(model_name, "_MCMC_draws.rds"))
+    saveRDS(chain_draws, out_file)
+    message("Saved Airfoil draws for chain ",
+            i,
+            " (",
+            model_name,
+            ") to: ",
+            out_file)
+  }
 }

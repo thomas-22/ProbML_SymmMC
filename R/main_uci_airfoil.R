@@ -72,14 +72,14 @@ predict_airfoil_vs_y_all_features(
 bnn_stan_airfoil <- compile_airfoil_stan()
 
 run_dei_mcmc_airfoil(
-  members_count      = 1,  
+  members_count      = 4,  
   init_file          = "results/ensemble_airfoil/airfoil_canon_cluster_eval/airfoil_reps_cosine.txt",
-  warmup_steps       = 120,
-  sampling_steps     = 50,
+  warmup_steps       = 300,
+  sampling_steps     = 200,
   refresh            = 10,
-  adapt_delta        = 0.90,
-  max_treedepth      = 12,
-  threads_per_chain  = 12,
+  adapt_delta        = 0.95,
+  max_treedepth      = 15,
+  threads_per_chain  = 3,
   dataset_scaled_rds = "data/uci/airfoil_dataset_scaled.rds",
   ensemble_path      = "results/ensemble_airfoil",
   output_path        = "results/mcmc_airfoil",
