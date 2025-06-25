@@ -228,50 +228,66 @@ run_dei_mcmc_airfoil <- function(
     refresh           = 200,
     adapt_delta       = 0.99,
     max_treedepth     = 15,
-    subsample_frac    = 1,
     threads_per_chain = 1,
-    data_dir          = "data/uci",
+    
+    # this must now point to the already-scaled dataset
+    dataset_scaled_rds = "data/uci/airfoil_dataset_scaled.rds",
+    
     ensemble_path     = "results/ensemble_airfoil",
     output_path       = "results/mcmc_airfoil",
+    
     H1 = 64, H2 = 64, H3 = 32
 ) {
-  # 1) Daten laden & skalieren
-  info     <- load_airfoil_scaled_inputs(data_dir)
-  df       <- info$df
-  x_scaled <- info$x_scaled
-  y_vec    <- df$SoundPressure
+  library(purrr)
+  library(keras)
+  
+  # ─── A) LOAD SCALED DATA ─────────────────────────────────────────────────────
+  df <- readRDS(dataset_scaled_rds)
+  features  <- c("Frequency","AngleAttack","ChordLength","Velocity","SuctionThickness")
+  x_scaled  <- as.matrix(df[, features])
+  y_scaled  <- as.numeric(df$SoundPressure)
   N <- nrow(x_scaled); D <- ncol(x_scaled)
   
-  # 2) Stan-Datenliste
   stan_data <- list(
-    N = N, D = D,
-    x = x_scaled,
-    y = y_vec,
-    H1 = H1, H2 = H2, H3 = H3,
+    N          = N, D          = D,
+    x          = x_scaled, 
+    y          = y_scaled,
+    H1         = H1, H2         = H2, H3 = H3,
     num_chunks = threads_per_chain
   )
   
-  # 3) Initialisierungspfade
+  # ─── B) COLLECT INIT PATHS ───────────────────────────────────────────────────
   if (!is.null(init_file)) {
-    lines      <- readLines(init_file)
-    init_paths <- if (members_count>0) head(lines, members_count) else lines
+    init_lines <- readLines(init_file)
+    init_paths <- head(init_lines, members_count)
   } else {
-    all_canons <- list.files(ensemble_path, pattern="_canon\\.keras$", full.names=TRUE)
-    init_paths <- if (members_count>0) head(all_canons, members_count) else all_canons
+    all_canons <- list.files(ensemble_path,
+                             pattern = "_canon\\.keras$",
+                             full.names = TRUE)
+    init_paths <- head(all_canons, members_count)
   }
-  if (length(init_paths)==0) stop("Keine Initialisierungen gefunden")
+  if (length(init_paths) < members_count)
+    stop("Found only ", length(init_paths),
+         " init models; need ", members_count)
   
-  # 4) Modelle laden & Skalen schätzen
-  keras_models <- purrr::map(init_paths, load_model_tf)
-  scales <- estimate_scales(keras_models, x_scaled, y_vec)
+  # ─── C) LOAD MODELS & ESTIMATE PRIOR SCALES ─────────────────────────────────
+  keras_models <- map(init_paths, load_model_tf)
   
-  # 5) Inits-Liste bauen (non-centered)
-  inits_list <- purrr::map(keras_models, function(m) {
-    # inspect scales
-    message(sprintf("Scales: sigma_W=%.3f, sigma_B=%.3f, sigma=%.3f",
-                    scales$sigma_W, scales$sigma_B, scales$sigma))
-    v <- unlist(lapply(get_weights(m), as.vector))
-    # Parameter-Splits
+  estimate_scales <- function(models) {
+    Wmat <- do.call(rbind,
+                    map(models, ~ unlist(map(get_weights(.x), as.vector))))
+    list(
+      sigma_W = max(sd(Wmat), 0.1),
+      sigma_B = max(sd(Wmat), 0.1),
+      sigma   = 1   # since y was z-scaled
+    )
+  }
+  scales <- estimate_scales(keras_models)
+  
+  # ─── D) BUILD NON-CENTERED INITS ──────────────────────────────────────────────
+  inits_list <- map(keras_models, function(m) {
+    v <- unlist(map(get_weights(m), as.vector))
+    # exactly your original splits
     n_W1 <- H1 * D; n_b1 <- H1
     n_W2 <- H2 * H1; n_b2 <- H2
     n_W3 <- H3 * H2; n_b3 <- H3
@@ -286,49 +302,38 @@ run_dei_mcmc_airfoil <- function(
       n_W1 + n_b1 + n_W2 + n_b2 + n_W3 + n_b3 + n_w4,
       n_W1 + n_b1 + n_W2 + n_b2 + n_W3 + n_b3 + n_w4 + n_b4
     )
+    W1_flat <- v[1:ends[1]]
+    b1       <- v[(ends[1]+1):ends[2]]
+    W2       <- matrix(v[(ends[2]+1):ends[3]], H2, H1)
+    b2       <- v[(ends[3]+1):ends[4]]
+    W3       <- matrix(v[(ends[4]+1):ends[5]], H3, H2)
+    b3       <- v[(ends[5]+1):ends[6]]
+    w4       <- v[(ends[6]+1):ends[7]]
+    b4       <- v[ends[7] + 1]
     
-    # original parameters
-    W1_flat_orig <- v[1:ends[1]]
-    b1_orig      <- v[(ends[1]+1):ends[2]]
-    W2_orig      <- matrix(v[(ends[2]+1):ends[3]], H2, H1)
-    b2_orig      <- v[(ends[3]+1):ends[4]]
-    W3_orig      <- matrix(v[(ends[4]+1):ends[5]], H3, H2)
-    b3_orig      <- v[(ends[5]+1):ends[6]]
-    w4_orig      <- v[(ends[6]+1):ends[7]]
-    b4_orig      <- v[ends[7] + 1]
-    
-    # non-centered transforms + cap extremes to avoid inf
-    limit <- 5
-    z_W1 <- pmin(pmax(W1_flat_orig / scales$sigma_W, -limit), limit)
-    z_b1 <- pmin(pmax(b1_orig      / scales$sigma_B, -limit), limit)
-    z_W2 <- pmin(pmax(W2_orig       / scales$sigma_W, -limit), limit)
-    z_b2 <- pmin(pmax(b2_orig      / scales$sigma_B, -limit), limit)
-    z_W3 <- pmin(pmax(W3_orig       / scales$sigma_W, -limit), limit)
-    z_b3 <- pmin(pmax(b3_orig      / scales$sigma_B, -limit), limit)
-    z_w4 <- pmin(pmax(w4_orig       / scales$sigma_W, -limit), limit)
-    z_b4 <- pmin(pmax(b4_orig      / scales$sigma_B, -limit), limit)
-    
+    limit <- 5   # clamp to avoid Inf
     list(
-      z_W1_flat = z_W1,
-      z_b1      = z_b1,
-      z_W2      = z_W2,
-      z_b2      = z_b2,
-      z_W3      = z_W3,
-      z_b3      = z_b3,
-      z_w4      = z_w4,
-      z_b4      = z_b4,
+      z_W1_flat = pmin(pmax(W1_flat / scales$sigma_W, -limit), limit),
+      z_b1      = pmin(pmax(b1       / scales$sigma_B, -limit), limit),
+      z_W2      = pmin(pmax(W2       / scales$sigma_W, -limit), limit),
+      z_b2      = pmin(pmax(b2       / scales$sigma_B, -limit), limit),
+      z_W3      = pmin(pmax(W3       / scales$sigma_W, -limit), limit),
+      z_b3      = pmin(pmax(b3       / scales$sigma_B, -limit), limit),
+      z_w4      = pmin(pmax(w4       / scales$sigma_W, -limit), limit),
+      z_b4      = pmin(pmax(b4       / scales$sigma_B, -limit), limit),
+      
       sigma_W   = scales$sigma_W,
       sigma_B   = scales$sigma_B,
       sigma     = scales$sigma
     )
   })
   
-  # 6) Sampling starten
+  # ─── E) RUN STAN ───────────────────────────────────────────────────────────────
   fit <- bnn_stan_airfoil$sample(
     data              = stan_data,
     init              = inits_list,
-    chains            = length(inits_list),
-    parallel_chains   = length(inits_list),
+    chains            = members_count,
+    parallel_chains   = members_count,
     threads_per_chain = threads_per_chain,
     iter_warmup       = warmup_steps,
     iter_sampling     = sampling_steps,
@@ -337,35 +342,10 @@ run_dei_mcmc_airfoil <- function(
     max_treedepth     = max_treedepth
   )
   
-  # 7) Speichern
-  dir.create(output_path, recursive=TRUE, showWarnings=FALSE)
-  out_file <- file.path(
-    output_path,
-    sprintf("airfoil_%dchains_draws.rds", length(inits_list))
-  )
+  # ─── F) SAVE DRAWS ─────────────────────────────────────────────────────────────
+  dir.create(output_path, recursive = TRUE, showWarnings = FALSE)
+  out_file <- file.path(output_path,
+                        sprintf("airfoil_%dchains_draws.rds", members_count))
   saveRDS(fit$draws(), out_file)
   message("Saved Airfoil draws to: ", out_file)
-}
-
-estimate_scales <- function(models, x_matrix, y_vec) {
-  # 1) Flatten all weights into a big matrix
-  weight_list <- lapply(models, function(m) {
-    unlist(lapply(get_weights(m), as.vector))
-  })
-  Wmat <- do.call(rbind, weight_list)
-  sigma_W <- max(stats::sd(Wmat), 0.1)
-  sigma_B <- max(stats::sd(Wmat), 0.1)  # we’re using same for biases
-  
-  # 2) Estimate observation noise from predictive MSE
-  pred_vars <- vapply(models, function(m) {
-    preds <- as.numeric(m %>% predict(x_matrix))
-    mean((y_vec - preds)^2)
-  }, numeric(1))
-  sigma <- max(sqrt(mean(pred_vars)), 0.1)
-  
-  list(
-    sigma_W = sigma_W,
-    sigma_B = sigma_B,
-    sigma   = sigma
-  )
 }

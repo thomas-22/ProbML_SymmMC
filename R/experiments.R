@@ -99,3 +99,11 @@ sample_df <- df %>% sample_n(min(500, nrow(df)))
 ggpairs(sample_df, columns=1:6,
         columnLabels = names(df),
         title="Pairs-Plot (Sample) aller Variablen")
+
+
+
+
+df     <- readRDS("data/uci/airfoil_dataset_scaled.rds")
+x_scaled <- info$x_scaled
+y_vec    <- df$SoundPressure
+N <- nrow(x_scaled); D <- ncol(x_scaled)

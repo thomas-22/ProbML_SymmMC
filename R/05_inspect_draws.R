@@ -318,3 +318,297 @@ show_sin_full_analysis <- function(
     ) +
     theme_minimal()
 }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Utilities for UCI-Airfoil DEI-MCMC posterior inspection
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(posterior)
+
+# Helper: extract parameter from draws matrix --------------------------------
+# draws_mat: posterior::draws_matrix (rows = iterations, cols = vars)
+get_param <- function(draws_mat, iter, prefix, dims) {
+  cn <- colnames(draws_mat)
+  if (length(dims) == 1) {
+    # scalar or vector
+    if (dims == 1) {
+      # scalar: try prefix or prefix[1]
+      nm <- if (prefix %in% cn) prefix else paste0(prefix, "[1]")
+      return(as.numeric(draws_mat[iter, nm]))
+    }
+    # vector of length dims
+    cols <- paste0(prefix, "[", seq_len(dims), "]")
+    return(as.numeric(draws_mat[iter, cols]))
+  }
+  # matrix dims = c(rows, cols)
+  rows <- dims[1]; cols <- dims[2]
+  names <- as.vector(outer(
+    seq_len(rows), seq_len(cols),
+    function(r,c) sprintf("%s[%d,%d]", prefix, r, c)
+  ))
+  mat <- matrix(draws_mat[iter, names], nrow = rows, byrow = FALSE)
+  return(mat)
+}
+
+# 1) Partial Dependence: Posterior Predictive Mean ----------------------------
+plot_posterior_predictive_mean_uciairfoil <- function(
+    draw_file,
+    dataset_rds_path = "data/uci/airfoil_dataset.rds",
+    scaler_rds_path  = "data/uci/airfoil_scaler.rds",
+    H1, H2, H3,
+    n.grid = 100
+) {
+  # load posterior draws
+  draws_mat <- load_draws(draw_file)
+  
+  # load raw + scaler
+  df_raw <- readRDS(dataset_rds_path)
+  scaler <- readRDS(scaler_rds_path)
+  features <- names(scaler$feature_means)
+  
+  # compute feature means in raw/log space
+  raw_means <- df_raw %>%
+    mutate(Frequency = log1p(Frequency)) %>%
+    summarise(across(all_of(features), mean, na.rm=TRUE))
+  
+  # build a grid + compute posterior mean for each feature
+  pd_list <- purrr::map_df(features, function(feat) {
+    # raw grid for this feature
+    x.seq <- seq(min(df_raw[[feat]], na.rm=TRUE),
+                 max(df_raw[[feat]], na.rm=TRUE),
+                 length.out = n.grid)
+    
+    # replicate mean row
+    dfg <- raw_means[rep(1, n.grid), ] %>% as.data.frame()
+    dfg[[feat]] <- x.seq
+    
+    # preprocess: log + scale
+    dfg$Frequency <- log1p(dfg$Frequency)
+    X_raw <- as.matrix(dfg[, features])
+    X_scaled <- sweep(X_raw,  2, scaler$feature_means, "-")
+    X_scaled <- sweep(X_scaled, 2, scaler$feature_sds,   "/")
+    
+    # allocate container
+    n_iter <- nrow(draws_mat)
+    mu_mat <- matrix(NA_real_, nrow = n_iter, ncol = n.grid)
+    
+    # loop over iterations
+    for (i in seq_len(n_iter)) {
+      W1 <- get_param(draws_mat, i, "W1", c(H1, length(features)))
+      b1 <- get_param(draws_mat, i, "b1", H1)
+      W2 <- get_param(draws_mat, i, "W2", c(H2, H1))
+      b2 <- get_param(draws_mat, i, "b2", H2)
+      W3 <- get_param(draws_mat, i, "W3", c(H3, H2))
+      b3 <- get_param(draws_mat, i, "b3", H3)
+      w4 <- get_param(draws_mat, i, "w4", H3)
+      b4 <- get_param(draws_mat, i, "b4", 1)
+      
+      # forward pass for all grid points at once
+      A1 <- tanh(W1 %*% t(X_scaled) + b1)
+      A2 <- tanh(W2 %*% A1 + b2)
+      A3 <- tanh(W3 %*% A2 + b3)
+      # w4 is length H3: broadcast
+      mu_mat[i, ] <- as.numeric(crossprod(w4, A3) + b4)
+    }
+    
+    # posterior predictive mean (on scaled target)
+    mu_mean_scaled <- colMeans(mu_mat)
+    # un-scale to original SoundPressure
+    mu_mean <- mu_mean_scaled * scaler$target_sd + scaler$target_mean
+    
+    tibble(
+      Feature   = feat,
+      Value     = x.seq,
+      Predicted = mu_mean
+    )
+  })
+  
+  # raw scatter
+  scatter_df <- df_raw %>%
+    rename(Actual = SoundPressure) %>%
+    mutate(Frequency = Frequency) %>%
+    pivot_longer(all_of(features),
+                 names_to  = "Feature",
+                 values_to = "Value")
+  
+  ggplot() +
+    geom_point(data = scatter_df,
+               aes(x = Value, y = Actual),
+               size = 0.6, alpha = 0.4, color = "blue") +
+    geom_line(data = pd_list,
+              aes(x = Value, y = Predicted),
+              color = "red", size = 1) +
+    facet_wrap(~ Feature, scales = "free_x") +
+    labs(
+      title = "Airfoil DEI-MCMC: Partial Dependence (Posterior Mean)",
+      x     = "Feature value",
+      y     = "SoundPressure"
+    ) +
+    theme_minimal()
+}
+
+# 2) Partial Dependence: Posterior Predictive Samples ------------------------
+plot_posterior_predictive_samples_uciairfoil <- function(
+    draw_file,
+    dataset_rds_path = "data/uci/airfoil_dataset.rds",
+    scaler_rds_path  = "data/uci/airfoil_scaler.rds",
+    H1, H2, H3,
+    n.grid     = 100,
+    num_draws  = 20,
+    seed       = 42
+) {
+  set.seed(seed)
+  draws_mat <- load_draws(draw_file)
+  total     <- nrow(draws_mat)
+  ids       <- sample(seq_len(total), min(num_draws, total))
+  
+  df_raw <- readRDS(dataset_rds_path)
+  scaler <- readRDS(scaler_rds_path)
+  features <- names(scaler$feature_means)
+  
+  raw_means <- df_raw %>%
+    mutate(Frequency = log1p(Frequency)) %>%
+    summarise(across(all_of(features), mean, na.rm=TRUE))
+  
+  # build sample curves
+  samples_df <- purrr::map_dfr(ids, function(i) {
+    purrr::map_df(features, function(feat) {
+      x.seq <- seq(min(df_raw[[feat]], na.rm=TRUE),
+                   max(df_raw[[feat]], na.rm=TRUE),
+                   length.out = n.grid)
+      dfg <- raw_means[rep(1, n.grid), ] %>% as.data.frame()
+      dfg[[feat]] <- x.seq
+      dfg$Frequency <- log1p(dfg$Frequency)
+      X_raw <- as.matrix(dfg[, features])
+      X_scaled <- sweep(X_raw, 2, scaler$feature_means, "-")
+      X_scaled <- sweep(X_scaled, 2, scaler$feature_sds,   "/")
+      
+      # extract params for this draw
+      W1 <- get_param(draws_mat, i, "W1", c(H1, length(features)))
+      b1 <- get_param(draws_mat, i, "b1", H1)
+      W2 <- get_param(draws_mat, i, "W2", c(H2, H1))
+      b2 <- get_param(draws_mat, i, "b2", H2)
+      W3 <- get_param(draws_mat, i, "W3", c(H3, H2))
+      b3 <- get_param(draws_mat, i, "b3", H3)
+      w4 <- get_param(draws_mat, i, "w4", H3)
+      b4 <- get_param(draws_mat, i, "b4", 1)
+      
+      A1 <- tanh(W1 %*% t(X_scaled) + b1)
+      A2 <- tanh(W2 %*% A1 + b2)
+      A3 <- tanh(W3 %*% A2 + b3)
+      mu_scaled <- as.numeric(crossprod(w4, A3) + b4)
+      mu <- mu_scaled * scaler$target_sd + scaler$target_mean
+      
+      tibble(
+        draw      = i,
+        Feature   = feat,
+        Value     = x.seq,
+        Predicted = mu
+      )
+    })
+  })
+  
+  # raw scatter
+  scatter_df <- df_raw %>%
+    rename(Actual = SoundPressure) %>%
+    pivot_longer(all_of(features),
+                 names_to  = "Feature",
+                 values_to = "Value")
+  
+  ggplot() +
+    geom_point(data = scatter_df,
+               aes(x = Value, y = Actual),
+               size = 0.6, alpha = 0.3, color = "grey50") +
+    geom_line(data = samples_df,
+              aes(x = Value, y = Predicted, group = draw),
+              alpha = 0.3, color = "darkgreen") +
+    facet_wrap(~ Feature, scales = "free_x") +
+    labs(
+      title = "Airfoil DEI-MCMC: Partial Dependence (Posterior Samples)",
+      x     = "Feature value",
+      y     = "SoundPressure"
+    ) +
+    theme_minimal()
+}
+
+# Reads a text file of keras model paths, overlays their PD curves on the posterior-sample plot
+plot_posterior_ensemble_and_dei <- function(
+    draw_file,
+    nn_paths_file,
+    dataset_rds_path = "data/uci/airfoil_dataset.rds",
+    scaler_rds_path  = "data/uci/airfoil_scaler.rds",
+    H1, H2, H3,
+    n.grid    = 100,
+    num_draws = 20,
+    seed      = 42
+) {
+  library(ggplot2)
+  library(dplyr)
+  library(tidyr)
+  library(purrr)
+  library(keras)
+  
+  # base posterior-sample plot
+  p_base <- plot_posterior_predictive_samples_uciairfoil(
+    draw_file         = draw_file,
+    dataset_rds_path  = dataset_rds_path,
+    scaler_rds_path   = scaler_rds_path,
+    H1 = H1, H2 = H2, H3 = H3,
+    n.grid    = n.grid,
+    num_draws = num_draws,
+    seed      = seed
+  )
+  
+  # load raw & scaler
+  df_raw <- readRDS(dataset_rds_path)
+  scaler <- readRDS(scaler_rds_path)
+  features <- names(scaler$feature_means)
+  raw_means <- df_raw %>%
+    mutate(Frequency = log1p(Frequency)) %>%
+    summarise(across(all_of(features), mean, na.rm=TRUE))
+  
+  # read ensemble Keras paths
+  nn_paths <- readLines(nn_paths_file)
+  
+  # build ensemble PD data
+  ens_df <- map_dfr(nn_paths, function(mp) {
+    model <- load_model_tf(mp)
+    map_dfr(features, function(feat) {
+      x.seq <- seq(min(df_raw[[feat]], na.rm=TRUE),
+                   max(df_raw[[feat]], na.rm=TRUE),
+                   length.out = n.grid)
+      dfg <- raw_means[rep(1, n.grid), ] %>% as.data.frame()
+      dfg[[feat]] <- x.seq
+      dfg$Frequency <- log1p(dfg$Frequency)
+      X_raw <- as.matrix(dfg[, features])
+      X_scaled <- sweep(X_raw, 2, scaler$feature_means, "-")
+      X_scaled <- sweep(X_scaled, 2, scaler$feature_sds,   "/")
+      preds <- as.numeric(model %>% predict(X_scaled))
+      preds <- preds * scaler$target_sd + scaler$target_mean
+      tibble(
+        Model     = basename(mp),
+        Feature   = feat,
+        Value     = x.seq,
+        Predicted = preds
+      )
+    })
+  })
+  
+  # overlay ensemble lines
+  p_base +
+    geom_line(
+      data = ens_df,
+      aes(x = Value, y = Predicted, color = Model),
+      size = 1
+    ) +
+    scale_color_brewer(palette = "Dark2", name = "Ensemble") +
+    labs(
+      title = "Airfoil PD: DEI Samples + Ensemble NNs",
+      x     = "Feature value",
+      y     = "SoundPressure"
+    ) +
+    theme(legend.position = "bottom")
+}

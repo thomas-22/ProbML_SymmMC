@@ -14,22 +14,31 @@ load_airfoil_data("data/uci")
 prepare_and_save_airfoil(
   input_file   = "data/uci/airfoil_dataset.rds",
   output_file  = "data/uci/airfoil_dataset_scaled.rds",
+  scaler_file  = "data/uci/airfoil_scaler.rds",
   scale_target = TRUE
 )
 
+
+
 # 2) Train an ensemble on Airfoil:
 train_airfoil_ensemble(
-  data_dir      = "data/uci",
-  ensemble_size = 4,
-  epochs        = 200,
-  batch_size    = 32,
-  save_path     = "results/ensemble_airfoil"
+  dataset_rds_path = "data/uci/airfoil_dataset_scaled.rds",
+  ensemble_size    = 4,
+  epochs           = 400,
+  batch_size       = 32,
+  hidden_units     = c(64, 64, 32),
+  activation       = "tanh",
+  output_units     = 1,
+  save_path        = "results/ensemble_airfoil",
+  val_split        = 0.2,
+  patience         = 100
 )
 
 # 3) Plot one ensemble member vs. Frequency:
 predict_airfoil_vs_y_all_features(
-  model_path = "results/ensemble_airfoil/airfoil_member01.keras",
-  data_dir   = "data/uci"
+  model_path         = "results/ensemble_airfoil/airfoil_member01.keras",
+  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
 )
 
 #4) Canonicalize and then cluster the ensemble NNs to ensure that initialized
@@ -53,8 +62,9 @@ res <- cluster_canonical_models(
 
 # Show canonicalized NN
 predict_airfoil_vs_y_all_features(
-  model_path = "results/ensemble_airfoil/airfoil_member01_canon.keras",
-  data_dir   = "data/uci"
+  model_path         = "results/ensemble_airfoil/airfoil_member01_canon.keras",
+  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
 )
 
 #04 Run MCMC Chains that are initialized at the location of the NNs in the parameter space
@@ -62,41 +72,53 @@ predict_airfoil_vs_y_all_features(
 bnn_stan_airfoil <- compile_airfoil_stan()
 
 run_dei_mcmc_airfoil(
-  members_count     = 1,
-  init_file         = "results/ensemble_airfoil/airfoil_canon_cluster_eval/airfoil_reps_cosine.txt",
-  warmup_steps      = 100,
-  sampling_steps    = 50,
-  refresh           = 10,
-  adapt_delta       = 0.90,
-  max_treedepth     = 12,
-  threads_per_chain = 12,
-  data_dir          = "data/uci",
-  ensemble_path     = "results/ensemble_airfoil",
-  output_path       = "results/mcmc_airfoil",
-  H1 = 64, H2 = 64, H3 = 32
+  members_count      = 1,  
+  init_file          = "results/ensemble_airfoil/airfoil_canon_cluster_eval/airfoil_reps_cosine.txt",
+  warmup_steps       = 120,
+  sampling_steps     = 50,
+  refresh            = 10,
+  adapt_delta        = 0.90,
+  max_treedepth      = 12,
+  threads_per_chain  = 12,
+  dataset_scaled_rds = "data/uci/airfoil_dataset_scaled.rds",
+  ensemble_path      = "results/ensemble_airfoil",
+  output_path        = "results/mcmc_airfoil",
+  H1                 = 64,
+  H2                 = 64,
+  H3                 = 32
 )
 
 #05 Inspect result of DEI MCMC
-draws_mat <- load_draws("results/mcmc_draws/sin_2chains_draws.rds")
-summarize_param(draws_mat, "sigma")
-traceplot_param(draws_mat,   "sigma")
-density_param(draws_mat,     "sigma")
+draws_mat_airfoil <- load_draws("results/mcmc_airfoil/airfoil_1chains_draws.rds")
+summarize_param(draws_mat_airfoil, "sigma")
+traceplot_param(draws_mat_airfoil,   "sigma")
+density_param(draws_mat_airfoil,     "sigma")
 
-#total mean
-plot_posterior_predictive_mean(draws_mat, H1=64, H2=64, H3=32)
+# posterior mean PD
+plot_posterior_predictive_mean_uciairfoil(
+  draw_file         = "results/mcmc_airfoil/airfoil_1chains_draws.rds",
+  dataset_rds_path  = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path   = "data/uci/airfoil_scaler.rds",
+  H1 = 64, H2 = 64, H3 = 32,
+  n.grid = 150
+)
 
-#random samples
-plot_posterior_predictive_samples(draws_mat, H1 = 64, H2 = 64, H3 = 32, num_draws = 20)
+plot_posterior_predictive_samples_uciairfoil(
+  draw_file         = "results/mcmc_airfoil/airfoil_1chains_draws.rds",
+  dataset_rds_path  = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path   = "data/uci/airfoil_scaler.rds",
+  H1 = 64, H2 = 64, H3 = 32,
+  n.grid    = 150,
+  num_draws = 30
+)
 
-#everything together
-show_sin_full_analysis(
-  dataset_name = "sin",
-  data_dir      = "data/synthetic",
-  model_paths   = c(
-    "results/ensemble_synth/sin_dataset_member01_canon.keras",
-    "results/ensemble_synth/sin_dataset_member02_canon.keras"
-  ),
-  draw_file     = "results/mcmc_draws/sin_2chains_draws.rds",
-  num_draws     = 20,
-  H1 = 64, H2 = 64, H3 = 32
+plot_posterior_ensemble_and_dei(
+  draw_file         = "results/mcmc_airfoil/airfoil_1chains_draws.rds",
+  nn_paths_file     = "results/ensemble_airfoil/airfoil_canon_cluster_eval/airfoil_reps_cosine.txt",
+  dataset_rds_path  = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path   = "data/uci/airfoil_scaler.rds",
+  H1 = 64, H2 = 64, H3 = 32,
+  n.grid    = 150,
+  num_draws = 20,
+  seed      = 42
 )

@@ -159,34 +159,35 @@ load_airfoil_data <- function(data_dir = data_dir_default) {
   invisible(df)
 }
 
-# Prepare the dataset
+# ──────────────────────────────────────────────────────────────────────────────
+# 1) Prepare & save (features + optional target) with z-scaling
 prepare_and_save_airfoil <- function(input_file,
                                      output_file,
-                                     scale_target = FALSE) {
-  # 1) Rohdaten laden
+                                     scaler_file,
+                                     scale_target = TRUE) {
+  # load
   df_raw <- readRDS(input_file)
-  
-  # 2) Log-Transform für Frequency (vermeidet Ausreißer)
+  # log-transform Frequency
   df_raw$Frequency <- log1p(df_raw$Frequency)
   
-  # 3) Features definieren
+  # define
   features <- c("Frequency",
                 "AngleAttack",
                 "ChordLength",
                 "Velocity",
                 "SuctionThickness")
   
-  # 4) Skalen für Features berechnen
+  # compute feature means/sds
   feat_means <- vapply(df_raw[features], mean, numeric(1), na.rm = TRUE)
   feat_sds   <- vapply(df_raw[features], sd,   numeric(1), na.rm = TRUE)
   
-  # 5) DataFrame kopieren und Features z-standardisieren
+  # scale features
   df_scaled <- df_raw
   df_scaled[features] <- scale(df_raw[features],
                                center = feat_means,
                                scale  = feat_sds)
   
-  # 6) Optional: auch SoundPressure skalieren
+  # optionally scale target
   if (scale_target) {
     target_mean <- mean(df_raw$SoundPressure, na.rm = TRUE)
     target_sd   <- sd(df_raw$SoundPressure,   na.rm = TRUE)
@@ -195,148 +196,215 @@ prepare_and_save_airfoil <- function(input_file,
                                      scale  = target_sd)
   }
   
-  # 7) Speichern
+  # save
   saveRDS(df_scaled, output_file)
   message("Preprocessed Airfoil data saved to: ", output_file)
   
-  # 8) Invisibly: Rückgabe der Skalierungsparameter
-  out <- list(
+  # write scaler
+  scaler <- list(
     feature_means = feat_means,
     feature_sds   = feat_sds
   )
   if (scale_target) {
-    out$target_mean <- target_mean
-    out$target_sd   <- target_sd
+    scaler$target_mean <- target_mean
+    scaler$target_sd   <- target_sd
   }
-  invisible(out)
+  saveRDS(scaler, scaler_file)
+  message("Scaler parameters saved to: ", scaler_file)
+  
+  invisible(scaler)
 }
 
 
-
-# 2) Train a deep ensemble on the Airfoil dataset with input scaling
+# ──────────────────────────────────────────────────────────────────────────────
+# 2) Train a simple deep-ensemble (on already-scaled data)
 train_airfoil_ensemble <- function(
-    data_dir       = data_dir_default,
+    dataset_rds_path,
     ensemble_size  = 4,
-    epochs         = 200,
+    epochs         = 400,
     batch_size     = 32,
     hidden_units   = c(64, 64, 32),
     activation     = "tanh",
     output_units   = 1,
-    save_path      = "results/ensemble_airfoil"
+    save_path      = "results/ensemble_airfoil",
+    val_split      = 0.2,
+    patience       = 20
 ) {
   dir.create(save_path, recursive = TRUE, showWarnings = FALSE)
-  df <- readRDS(file.path(data_dir, "airfoil_dataset.rds"))
+  df <- readRDS(dataset_rds_path)
+  
   features <- c("Frequency", "AngleAttack", "ChordLength", "Velocity", "SuctionThickness")
-  x_raw <- as.matrix(df[, features])
-  y     <- df$SoundPressure
+  x <- as.matrix(df[, features])
+  y <- df$SoundPressure
   
-  # compute scaling parameters
-  mu    <- colMeans(x_raw)
-  sigma <- apply(x_raw, 2, sd)
-  x_scaled <- scale(x_raw, center = mu, scale = sigma)
-  
-  # save scaler for prediction
-  saveRDS(list(mu = mu, sigma = sigma), file.path(data_dir, "airfoil_scaler.rds"))
-  message("Saved scaler to: ", file.path(data_dir, "airfoil_scaler.rds"))
-  
-  input_dim <- ncol(x_scaled)
   for (m in seq_len(ensemble_size)) {
     set.seed(123 + m)
     model <- build_model(
-      input_dim    = input_dim,
+      input_dim    = ncol(x),
       hidden_units = hidden_units,
       activation   = activation,
       output_units = output_units
     )
-    model %>% fit(
-      x = x_scaled, y = y,
-      epochs     = epochs,
-      batch_size = batch_size,
-      verbose    = 0
+    
+    history <- model %>% fit(
+      x               = x, 
+      y               = y,
+      validation_split= val_split,
+      epochs          = epochs,
+      batch_size      = batch_size,
+      callbacks       = list(
+        callback_early_stopping(
+          monitor = "val_loss",
+          patience = patience,
+          restore_best_weights = TRUE
+        )
+      ),
+      verbose = 0
     )
-    fname <- file.path(save_path,
-                       sprintf("airfoil_member%02d.keras", m))
+    
+    fname <- file.path(save_path, sprintf("member%02d.keras", m))
     save_model_tf(model, fname)
-    message("Saved Airfoil ensemble member: ", fname)
+    message("Member ", m, " stopped at epoch ", 
+            which.min(history$metrics$val_loss), 
+            " (of max ", epochs, "). ",
+            "Saved to ", fname)
   }
 }
 
-# 3) Helper to load & scale Airfoil inputs for prediction
-load_airfoil_scaled_inputs <- function(data_dir = data_dir_default) {
-  df <- readRDS(file.path(data_dir, "airfoil_dataset.rds"))
-  features <- c("Frequency", "AngleAttack", "ChordLength", "Velocity", "SuctionThickness")
-  x_raw <- as.matrix(df[, features])
-  scaler <- readRDS(file.path(data_dir, "airfoil_scaler.rds"))
-  x_scaled <- sweep(x_raw, 2, scaler$mu, "-")
-  x_scaled <- sweep(x_scaled, 2, scaler$sigma, "/")
-  list(df = df, x_scaled = x_scaled)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 3) Compute raw+predictions, undoing target-scaling if needed
+compute_airfoil_preds <- function(
+    model_path,
+    dataset_rds_path,
+    scaler_rds_path
+) {
+  library(keras); library(dplyr)
+  df_raw <- readRDS(dataset_rds_path)
+  scaler <- readRDS(scaler_rds_path)
+  features <- names(scaler$feature_means)
+  
+  # apply log1p + feature scaling
+  df_proc <- df_raw
+  df_proc$Frequency <- log1p(df_proc$Frequency)
+  x_raw    <- as.matrix(df_proc[, features])
+  x_scaled <- sweep(x_raw,  2, scaler$feature_means, "-")
+  x_scaled <- sweep(x_scaled, 2, scaler$feature_sds,   "/")
+  
+  # predict
+  model <- load_model_tf(model_path)
+  preds  <- as.numeric(model %>% predict(x_scaled))
+  
+  # undo target scaling
+  if (!is.null(scaler$target_mean)) {
+    preds <- preds * scaler$target_sd + scaler$target_mean
+  }
+  
+  bind_cols(df_raw, Predicted = preds)
 }
 
-# 4) Predict & visualize on one feature
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4) Single-feature scatter + sorted line (optional)
 predict_airfoil_vs_y <- function(
     model_path,
-    data_dir = data_dir_default,
-    feature  = "Frequency"
+    dataset_rds_path,
+    scaler_rds_path,
+    feature = "Frequency"
 ) {
-  info     <- load_airfoil_scaled_inputs(data_dir)
-  df       <- info$df
-  x_scaled <- info$x_scaled
-  model    <- load_model_tf(model_path)
+  library(ggplot2); library(dplyr)
   
-  y_pred <- as.numeric(model %>% predict(x_scaled))
-  plot_df <- tibble(
-    x         = df[[feature]],
-    actual    = df$SoundPressure,
-    predicted = y_pred
-  ) %>% arrange(x)
+  dfp <- compute_airfoil_preds(model_path, dataset_rds_path, scaler_rds_path)
+  dfp <- dfp %>% arrange(.data[[feature]])
   
-  ggplot(plot_df, aes(x = x)) +
-    geom_point(aes(y = actual, color = "Actual"), alpha = 0.6, size = 1) +
-    geom_line(aes(y = predicted, color = "Predicted"), size = 0.8) +
-    labs(
-      title = paste(basename(model_path), "on Airfoil:", feature),
-      x = feature, y = "SoundPressure"
-    ) +
-    scale_color_manual(name = NULL,
+  ggplot(dfp, aes(x = .data[[feature]])) +
+    geom_point(aes(y = SoundPressure, color = "Actual"),
+               size = 1, alpha = 0.6) +
+    geom_line(aes(y = Predicted,   color = "Predicted",
+                  group = 1),       # force single line
+              size = 0.8) +
+    scale_color_manual(NULL,
                        values = c(Actual = "blue", Predicted = "red")) +
+    labs(
+      title = paste(basename(model_path), "–", feature),
+      x     = feature,
+      y     = "SoundPressure"
+    ) +
     theme_minimal()
 }
 
-# 5) Predict & visualize over all features with facets
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 5) Partial‐dependence facets: vary one feature at a time,
+#    hold all others at their (log‐transformed) mean, and draw a smooth curve
 predict_airfoil_vs_y_all_features <- function(
     model_path,
-    data_dir = data_dir_default
+    dataset_rds_path,
+    scaler_rds_path,
+    n.grid = 100
 ) {
   library(ggplot2)
   library(dplyr)
   library(tidyr)
+  library(purrr)
   
-  info     <- load_airfoil_scaled_inputs(data_dir)
-  df       <- info$df
-  x_scaled <- info$x_scaled
-  model    <- load_model_tf(model_path)
+  # raw + scaler
+  df_raw <- readRDS(dataset_rds_path)
+  scaler <- readRDS(scaler_rds_path)
+  features <- names(scaler$feature_means)
   
-  features <- c("Frequency", "AngleAttack", "ChordLength", "Velocity", "SuctionThickness")
-  y_pred   <- as.numeric(model %>% predict(x_scaled))
+  # 1) compute mean of every feature *after* log1p on Frequency
+  df_means <- df_raw %>%
+    mutate(Frequency = log1p(Frequency)) %>%
+    summarise(across(all_of(features), mean, na.rm=TRUE))
   
-  df_long <- df %>%
-    mutate(Predicted = y_pred) %>%
-    select(all_of(features), SoundPressure, Predicted) %>%
-    pivot_longer(
-      cols      = all_of(features),
-      names_to  = "Feature",
-      values_to = "Value"
-    )
+  # 2) build a grid + predict for each feature
+  pd <- map_df(features, function(feat) {
+    x.seq <- seq(min(df_raw[[feat]], na.rm=TRUE),
+                 max(df_raw[[feat]], na.rm=TRUE),
+                 length.out = n.grid)
+    # replicate the mean row n.grid times
+    dfg <- df_means[rep(1, n.grid), ] %>% as.data.frame()
+    dfg[[feat]] <- x.seq
+    # log + scale
+    dfg$Frequency <- log1p(dfg$Frequency)
+    x.raw    <- as.matrix(dfg[, features])
+    x.scaled <- sweep(x.raw,  2, scaler$feature_means, "-")
+    x.scaled <- sweep(x.scaled, 2, scaler$feature_sds,   "/")
+    # predict + undo target scaling
+    model <- load_model_tf(model_path)
+    y.pred <- as.numeric(model %>% predict(x.scaled))
+    if (!is.null(scaler$target_mean)) {
+      y.pred <- y.pred * scaler$target_sd + scaler$target_mean
+    }
+    tibble(Feature   = feat,
+           Value     = x.seq,
+           Predicted = y.pred)
+  })
   
-  ggplot(df_long, aes(x = Value)) +
-    geom_point(aes(y = SoundPressure, color = "Actual"),
-               size = 0.7, alpha = 0.4) +
-    geom_line(aes(y = Predicted, color = "Predicted"), size = 0.8) +
+  # 3) pivot raw for scatter
+  raw_long <- df_raw %>%
+    rename(Actual = SoundPressure) %>%
+    mutate(Frequency = Frequency) %>%
+    pivot_longer(all_of(features),
+                 names_to  = "Feature",
+                 values_to = "Value")
+  
+  # 4) plot
+  ggplot() +
+    geom_point(data = raw_long,
+               aes(x = Value, y = Actual),
+               color = "blue", size = 0.6, alpha = 0.4) +
+    geom_line(data = pd,
+              aes(x = Value, y = Predicted),
+              color = "red", size = 1) +
     facet_wrap(~ Feature, scales = "free_x") +
-    scale_color_manual(name = NULL,
-                       values = c(Actual = "blue", Predicted = "red")) +
-    labs(x = "Feature value", y = "SoundPressure (dB)",
-         title = paste("Airfoil Predictions:", basename(model_path))) +
-    theme_minimal() +
-    theme(legend.position = "bottom")
+    labs(
+      title = paste("Partial Dependence –", basename(model_path)),
+      x     = "Feature value",
+      y     = "SoundPressure"
+    ) +
+    theme_minimal()
 }
+# ──────────────────────────────────────────────────────────────────────────────
+
