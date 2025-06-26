@@ -24,22 +24,39 @@ prepare_and_save_airfoil(
 train_airfoil_ensemble(
   dataset_rds_path = "data/uci/airfoil_dataset_scaled.rds",
   ensemble_size    = 4,
-  epochs           = 400,
-  batch_size       = 32,
-  hidden_units     = c(64, 64, 32),
+  epochs           = 10000,
+  batch_size       = 16,
+  hidden_units     = c(16, 16, 8),
   activation       = "tanh",
   output_units     = 1,
   save_path        = "results/ensemble_airfoil",
-  val_split        = 0.2,
-  patience         = 100
+  val_split        = 0.225,
+  patience         = 1000
 )
 
-# 3) Plot one ensemble member vs. Frequency:
+# 3) Plot ensemble members:
+
 predict_airfoil_vs_y_all_features(
   model_path         = "results/ensemble_airfoil/airfoil_member01.keras",
   dataset_rds_path   = "data/uci/airfoil_dataset.rds",
   scaler_rds_path    = "data/uci/airfoil_scaler.rds"
 )
+predict_airfoil_vs_y_all_features(
+  model_path         = "results/ensemble_airfoil/airfoil_member02.keras",
+  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+)
+predict_airfoil_vs_y_all_features(
+  model_path         = "results/ensemble_airfoil/airfoil_member03.keras",
+  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+)
+predict_airfoil_vs_y_all_features(
+  model_path         = "results/ensemble_airfoil/airfoil_member04.keras",
+  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+)
+
 
 #4) Canonicalize and then cluster the ensemble NNs to ensure that initialized
 #   DEI chains explore functionally different modes in the posterior as opposed to
@@ -66,58 +83,73 @@ predict_airfoil_vs_y_all_features(
   dataset_rds_path   = "data/uci/airfoil_dataset.rds",
   scaler_rds_path    = "data/uci/airfoil_scaler.rds"
 )
+predict_airfoil_vs_y_all_features(
+  model_path         = "results/ensemble_airfoil/airfoil_member02_canon.keras",
+  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+)
+predict_airfoil_vs_y_all_features(
+  model_path         = "results/ensemble_airfoil/airfoil_member03_canon.keras",
+  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+)
+predict_airfoil_vs_y_all_features(
+  model_path         = "results/ensemble_airfoil/airfoil_member04_canon.keras",
+  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+)
 
 #04 Run MCMC Chains that are initialized at the location of the NNs in the parameter space
 # Example debug run
 bnn_stan_airfoil <- compile_airfoil_stan()
 
 run_dei_mcmc_airfoil(
-  members_count      = 4,  
+  members_count      = 2,  
   init_file          = "results/ensemble_airfoil/airfoil_canon_cluster_eval/airfoil_reps_cosine.txt",
-  warmup_steps       = 300,
-  sampling_steps     = 200,
-  refresh            = 10,
+  warmup_steps       = 350,
+  sampling_steps     = 125,
+  refresh            = 1,
   adapt_delta        = 0.95,
-  max_treedepth      = 15,
-  threads_per_chain  = 3,
+  max_treedepth      = 18,
+  threads_per_chain  = 6,
   dataset_scaled_rds = "data/uci/airfoil_dataset_scaled.rds",
   ensemble_path      = "results/ensemble_airfoil",
   output_path        = "results/mcmc_airfoil",
-  H1                 = 64,
-  H2                 = 64,
-  H3                 = 32
+  H1                 = 16,
+  H2                 = 16,
+  H3                 = 8
 )
 
 #05 Inspect result of DEI MCMC
-draws_mat_airfoil <- load_draws("results/mcmc_airfoil/airfoil_1chains_draws.rds")
+draws_mat_airfoil <- load_draws("results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds")
 summarize_param(draws_mat_airfoil, "sigma")
 traceplot_param(draws_mat_airfoil,   "sigma")
 density_param(draws_mat_airfoil,     "sigma")
 
 # posterior mean PD
 plot_posterior_predictive_mean_uciairfoil(
-  draw_file         = "results/mcmc_airfoil/airfoil_1chains_draws.rds",
+  draw_file         = "results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds",
   dataset_rds_path  = "data/uci/airfoil_dataset.rds",
   scaler_rds_path   = "data/uci/airfoil_scaler.rds",
-  H1 = 64, H2 = 64, H3 = 32,
+  H1 = 16, H2 = 16, H3 = 8,
   n.grid = 150
 )
 
 plot_posterior_predictive_samples_uciairfoil(
-  draw_file         = "results/mcmc_airfoil/airfoil_1chains_draws.rds",
+  draw_file         = "results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds",
   dataset_rds_path  = "data/uci/airfoil_dataset.rds",
   scaler_rds_path   = "data/uci/airfoil_scaler.rds",
-  H1 = 64, H2 = 64, H3 = 32,
+  H1 = 16, H2 = 16, H3 = 8,
   n.grid    = 150,
   num_draws = 30
 )
 
 plot_posterior_ensemble_and_dei(
-  draw_file         = "results/mcmc_airfoil/airfoil_1chains_draws.rds",
+  draw_file         = "results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds",
   nn_paths_file     = "results/ensemble_airfoil/airfoil_canon_cluster_eval/airfoil_reps_cosine.txt",
   dataset_rds_path  = "data/uci/airfoil_dataset.rds",
   scaler_rds_path   = "data/uci/airfoil_scaler.rds",
-  H1 = 64, H2 = 64, H3 = 32,
+  H1 = 16, H2 = 16, H3 = 8,
   n.grid    = 150,
   num_draws = 20,
   seed      = 42

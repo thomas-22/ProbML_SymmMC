@@ -9,7 +9,7 @@ system("make --version")
 library(keras)
 
 # 1) Modell laden
-model <- load_model_tf("results/ensemble_airfoil/airfoil_member01_canon.keras")
+model <- load_model_tf("results/ensemble_airfoil/airfoil_member04_canon.keras")
 
 # 2) Alle Gewichte extrahieren und zusammenfassen
 all_weights <- get_weights(model)

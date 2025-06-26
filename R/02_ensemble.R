@@ -262,7 +262,7 @@ train_airfoil_ensemble <- function(
       verbose = 0
     )
     
-    fname <- file.path(save_path, sprintf("member%02d.keras", m))
+    fname <- file.path(save_path, sprintf("airfoil_member%02d.keras", m))
     save_model_tf(model, fname)
     message("Member ", m, " stopped at epoch ", 
             which.min(history$metrics$val_loss), 

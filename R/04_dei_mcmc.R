@@ -206,7 +206,8 @@ run_dei_mcmc <- function(dataset_names      = NULL,
       iter_sampling     = sampling_steps,
       refresh           = refresh,
       adapt_delta       = adapt_delta,
-      max_treedepth     = max_treedepth
+      max_treedepth     = max_treedepth,
+      save_cmdstan_config   = TRUE
     )
     
     # Save draws
