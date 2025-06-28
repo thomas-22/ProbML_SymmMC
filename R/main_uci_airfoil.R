@@ -104,14 +104,14 @@ predict_airfoil_vs_y_all_features(
 bnn_stan_airfoil <- compile_airfoil_stan()
 
 run_dei_mcmc_airfoil(
-  members_count      = 2,  
+  members_count      = 4,  
   init_file          = "results/ensemble_airfoil/airfoil_canon_cluster_eval/airfoil_reps_cosine.txt",
   warmup_steps       = 350,
   sampling_steps     = 125,
   refresh            = 1,
   adapt_delta        = 0.95,
   max_treedepth      = 18,
-  threads_per_chain  = 6,
+  threads_per_chain  = 3,
   dataset_scaled_rds = "data/uci/airfoil_dataset_scaled.rds",
   ensemble_path      = "results/ensemble_airfoil",
   output_path        = "results/mcmc_airfoil",
@@ -121,10 +121,34 @@ run_dei_mcmc_airfoil(
 )
 
 #05 Inspect result of DEI MCMC
-draws_mat_airfoil <- load_draws("results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds")
-summarize_param(draws_mat_airfoil, "sigma")
-traceplot_param(draws_mat_airfoil,   "sigma")
-density_param(draws_mat_airfoil,     "sigma")
+draws1 <- load_draws("results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds")
+draws2 <- load_draws("results/mcmc_airfoil/airfoil_member02_canon_MCMC_draws.rds")
+
+df1 <- as_draws_df(draws1)
+df2 <- as_draws_df(draws2)
+
+df1$.chain <- 1L
+df1$.iteration <- seq_len(nrow(df1))
+df2$.chain <- 2L
+df2$.iteration <- seq_len(nrow(df2))
+
+df_both <- rbind(df1, df2)
+
+both <- as_draws_array(df_both)
+
+
+rhat(both)
+
+ess_bulk(both)
+
+summarize_param(draws1, "sigma")
+summarize_param(draws2, "sigma")
+
+traceplot_param(draws1,   "sigma")
+traceplot_param(draws2,   "sigma")
+
+density_param(draws1,     "sigma")
+density_param(draws2,     "sigma")
 
 # posterior mean PD
 plot_posterior_predictive_mean_uciairfoil(
@@ -153,4 +177,17 @@ plot_posterior_ensemble_and_dei(
   n.grid    = 150,
   num_draws = 20,
   seed      = 42
+)
+
+
+plot_pd_credible_band(
+  draw_files = c(
+    "results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds",
+    "results/mcmc_airfoil/airfoil_member02_canon_MCMC_draws.rds"
+  ),
+  dataset_rds_path = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path  = "data/uci/airfoil_scaler.rds",
+  H1 = 16, H2 = 16, H3 = 8,
+  level = 0.90,
+  n_grid = 100
 )

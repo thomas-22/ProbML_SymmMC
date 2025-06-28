@@ -612,3 +612,122 @@ plot_posterior_ensemble_and_dei <- function(
     ) +
     theme(legend.position = "bottom")
 }
+
+plot_pd_credible_band <- function(
+    draw_files,          # character vector of your *_MCMC_draws.rds paths
+    dataset_rds_path,    # "data/uci/airfoil_dataset.rds"
+    scaler_rds_path,     # "data/uci/airfoil_scaler.rds"
+    H1, H2, H3,          # your hidden layer sizes
+    level   = 0.90,      # credible level (0.90 = 90% band)
+    n_grid  = 100        # points per feature
+) {
+  library(posterior)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  
+  # --- 1) load & bind chains into a single draws_array
+  draws1 <- load_draws(draw_files[[1]])
+  draws2 <- load_draws(draw_files[[2]])
+  
+  df1 <- as_draws_df(draws1)
+  df1$.chain     <- 1L
+  df1$.iteration <- seq_len(nrow(df1))
+  
+  df2 <- as_draws_df(draws2)
+  df2$.chain     <- 2L
+  df2$.iteration <- seq_len(nrow(df2))
+  
+  df_both <- rbind(df1, df2)
+  both    <- as_draws_array(df_both)
+  
+  mat <- as_draws_matrix(both)   # (iter×chains) × variables
+  cn  <- colnames(mat)
+  
+  # helper to extract either scalars, vectors, or matrices
+  get_vec <- function(i, prefix, dims) {
+    if (length(dims) == 1) {
+      if (prefix %in% cn) {
+        return(mat[i, prefix])
+      }
+      cols <- paste0(prefix, "[", seq_len(dims), "]")
+      return(as.numeric(mat[i, cols]))
+    }
+    # matrix case
+    rows <- dims[1]; cols <- dims[2]
+    names <- as.vector(outer(
+      seq_len(rows), seq_len(cols),
+      function(r, c) sprintf("%s[%d,%d]", prefix, r, c)
+    ))
+    return(matrix(mat[i, names], nrow = rows, byrow = FALSE))
+  }
+  
+  # --- 2) load raw data & scaler
+  df_raw <- readRDS(dataset_rds_path)
+  scaler <- readRDS(scaler_rds_path)
+  features <- names(scaler$feature_means)
+  
+  # --- 3) build partial-dependence bands
+  pd_list <- lapply(features, function(feat) {
+    x_seq <- seq(
+      min(df_raw[[feat]]),
+      max(df_raw[[feat]]),
+      length.out = n_grid
+    )
+    
+    # matrix of (total_draws) × (n_grid) predictions
+    pd_mat <- sapply(x_seq, function(xj) {
+      # construct feature vector at xj, others at median
+      x0 <- sapply(features, function(f) {
+        if (f == feat) xj else median(df_raw[[f]])
+      })
+      names(x0) <- features
+      
+      # log-transform & scale as vector
+      x0["Frequency"] <- log1p(x0["Frequency"])
+      x_sc <- (x0 - scaler$feature_means) / scaler$feature_sds
+      
+      # forward pass for each posterior draw
+      sapply(seq_len(nrow(mat)), function(i) {
+        W1 <- get_vec(i, "W1", c(H1, length(features)))
+        b1 <- get_vec(i, "b1", H1)
+        W2 <- get_vec(i, "W2", c(H2, H1))
+        b2 <- get_vec(i, "b2", H2)
+        W3 <- get_vec(i, "W3", c(H3, H2))
+        b3 <- get_vec(i, "b3", H3)
+        w4 <- get_vec(i, "w4", H3)
+        b4 <- get_vec(i, "b4", 1)
+        
+        a1 <- tanh(W1 %*% x_sc + b1)
+        a2 <- tanh(W2 %*% a1   + b2)
+        a3 <- tanh(W3 %*% a2   + b3)
+        as.numeric(w4 %*% a3  + b4)
+      })
+    })
+    
+    # summarize quantiles across draws
+    tibble(
+      Feature = feat,
+      Value   = x_seq,
+      qlow    = apply(pd_mat, 2, quantile, (1 - level) / 2),
+      qmid    = apply(pd_mat, 2, quantile, 0.5),
+      qhi     = apply(pd_mat, 2, quantile, 1 - (1 - level) / 2)
+    )
+  })
+  
+  pd_all <- bind_rows(pd_list)
+  
+  # --- 4) plot
+  ggplot(pd_all, aes(x = Value)) +
+    geom_ribbon(aes(ymin = qlow, ymax = qhi),
+                fill = "steelblue", alpha = 0.3) +
+    geom_line(aes(y = qmid), color = "steelblue", size = 1) +
+    facet_wrap(~ Feature, scales = "free_x") +
+    labs(
+      title = sprintf("%.1f%% Credible Partial‐Dependence", level * 100),
+      x     = "Feature value",
+      y     = "Predicted SoundPressure"
+    ) +
+    theme_minimal()
+}
+
