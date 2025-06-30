@@ -1,0 +1,289 @@
+---
+title: |
+  Bayesian Neural Networks:
+  
+  DEI MCMC
+  
+  Symmetry & Mode Connectivity
+subtitle: "[s25] BA-Seminar: Probabilistic ML"
+author: "Thomas Witzani"
+date: "Munich, 30 June 2025"
+lang: en
+
+format:
+  pdf:
+    documentclass: scrreprt
+    classoption: [12pt, onecolumn, open=any]   # 12 pt like the template
+    number-sections: true
+    crossref:
+      chapters: true
+    bibliography: references.bib
+    toc: true
+    lof: false
+    lot: false
+
+    # Page geometry copied from the LMU template
+    geometry:
+      - a4paper
+      - width=160mm
+      - top=35mm
+      - bottom=30mm
+      - bindingoffset=0mm
+
+    # Fonts / links
+    mainfont: "Latin Modern Roman"
+    colorlinks: true
+
+    # Extra LaTeX injected in the preamble
+    header-includes: |
+      % keep figure / table numbers global
+      \counterwithout{figure}{chapter}
+      \counterwithout{table}{chapter}
+
+      % running headline & footer (matches template style)
+      \usepackage{fancyhdr}
+      \pagestyle{fancy}
+      \fancyhead{}
+      \fancyhead[R]{\small\itshape Bayesian Neural Networks: DEI-MCMC}
+      \fancyfoot{}
+      \fancyfoot[R]{\thepage}
+      \setlength{\headheight}{13.6pt}
+      \linespread{1.05}
+      \setkomafont{chapter}{\rmfamily\bfseries\LARGE}
+      \setkomafont{chapterprefix}{\rmfamily\bfseries\LARGE}
+      \setkomafont{section}{\rmfamily\bfseries\Large}
+      \setkomafont{subsection}{\rmfamily\bfseries\large}
+      \setkomafont{title}{\rmfamily\bfseries\Huge}
+      \setkomafont{subtitle}{\rmfamily\bfseries\Large}
+      \setkomafont{author}{\rmfamily\large}
+      \setkomafont{date}{\rmfamily\large}
+      \setkomafont{partentry}{\rmfamily}
+      \setkomafont{chapterentry}{\rmfamily}
+      
+---
+
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Bayesian neural networks (BNNs) generalize standard neural networks (NNs) by placing probability distributions over weights rather than relying on single point estimates, which in turn enables principled quantification of predictive uncertainty. In this work, I develop and evaluate a Deep-Ensemble-Initialized MCMC (DEI-MCMC) pipeline that trains a small ensemble of randomly-seeded networks, canonicalizes each network by neuron-sorting and sign-fixing, then clusters those canonicalized versions via cosine distance to select representatives on truly distinct posterior modes and uses those representatives to seed parallel "No U-Turn Sampler (NUTS)" (adaptive Hamiltonian Monte Carlo (HMC)) chains in Stan.
+
+In a simulation study on a noisy sinusoidal function I tuned the pipeline and showed that the empirical 90 % posterior predictive intervals closely match the ±1.645 σ bounds implied by the known Gaussian noise. Finally, I apply DEI-MCMC to the UCI Airfoil Self-Noise dataset and demonstrate that symmetry-aware initialization broadens credible intervals only where genuine posterior ambiguity exists, while preserving tight uncertainty elsewhere. Convergence diagnostics (split-$\bar{R}$, bulk and tail ESS), posterior predictive checks, and partial-dependence uncertainty bands all confirm that the sampler mixes well and yields calibrated predictive performance. These results establish that symmetry-aware ensemble initialization delivers efficient exploration of complex BNN posteriors and robust, interpretable uncertainty estimates with moderate computational overhead.
+
+# Introduction & Motivation
+
+## Motivation
+
+A NN is a parametric function
+$$
+\begin{aligned}
+\quad
+&f_{\theta}:\mathbb{R}^d\to\mathbb{R},\quad
+\theta=\{W^{(1)},b^{(1)},\dots,W^{(L)},b^{(L)}\},\\
+\end{aligned}
+$$
+defined layer-wise by
+$$
+\begin{aligned}
+&h^{(0)}=x,\\
+&h^{(\ell)}=\sigma\bigl(W^{(\ell)}\,h^{(\ell-1)}+b^{(\ell)}\bigr),
+\quad \ell=1,\dots,L-1,\\
+&f_{\theta}(x)=W^{(L)}\,h^{(L-1)}+b^{(L)}
+\end{aligned}
+$$
+where each $\sigma$ is a nonlinear activation. By the Universal Approximation Theorem, 
+for sufficiently large width this family can approximate any continuous function 
+on a compact domain up to a closeness $\epsilon > 0$.
+
+In a BNN we treat $\theta$ as a random variable with a prior
+$p(\theta)$ and observe the data
+$$D = \{(x_i, y_i)\}_{i=1}^N$$ 
+under the likelihood
+$$p(D \mid \theta) = \prod_{i=1}^N p\bigl(y_i \mid f_\theta(x_i)\bigr).$$
+
+Bayes' rule defines the posterior as
+$$p(\theta \mid D) = \frac{p(D \mid \theta)\,p(\theta)}{\displaystyle\int p(D \mid \theta)\,p(\theta)\,d\theta}$$
+which is a highly multimodal distribution in the $dim(\theta)$-dimensional parameter space.
+
+The advantage of BNNs is that, instead of collapsing to a single point estimate $\hat{\theta}$, the network maintains a full posterior \mbox{$p(\theta\mid D)$}, which simultaneously quantifies the 
+*aleatoric uncertainty* through the likelihood $p\bigl(y\mid f_{\theta}(x)\bigr)$, and 
+*epistemic uncertainty* through the spread of the posterior itself.
+
+For a new input x* the BNNs posterior predictive distribution is
+$$
+p\bigl(y^* \mid x^*, D\bigr)
+= \int p\bigl(y^* \mid f_\theta(x^*)\bigr)\,p\bigl(\theta \mid D\bigr)\,d\theta
+$$
+and the corresponding posterior-mean prediction (which is a point forecast) is
+$$
+\mathbb{E}\bigl[y^* \mid x^*, D\bigr]
+= \int f_\theta(x^*)\,p\bigl(\theta \mid D\bigr)\,d\theta.
+$$
+
+## Challenges
+
+The posterior predictive distribution admits a closed-form solution only under the restrictive, idealized assumption of conjugate priors and likelihoods. In practice, we almost always prefer richer priors and more realistic noise models, so we must fall back on approximate inference methods, namely MCMC.
+
+Another challenge is the sheer dimensionality of the parameter space in a BNN. In a 5-16-16-16-8-1 architecture
+the total number of trainable parameters is 513. In such high dimensions naïve MCMC samplers suffer from various 
+problems such as vanishing acceptance rates, slow mixing and exponential cost because the volume of a high-dimensional space grows so fast that covering it uniformly is infeasible.
+
+Moreover, BNN posteriors are inherently multimodal due to simple symmetries in the weight space. Two parameter settings ${\theta}$ and $\hat{\theta}$ are called equioutput if they define exactly the same input-output map,
+$$
+f_{\hat{\theta}}(x) = f_{\theta}(x)\quad \forall x
+$$
+Even a tiny network exhibits many such symmetries.
+
+The first type of symmetry arises through neuron permutations. In any hidden layer, the perceptrons are exchangeable: if you permute the columns of $W^{(l)}$ and simultaneously permute the rows of $W^{(l+1)}$, the 
+overall function $f_{\theta}$ remains unchanged. The number of symmetries that arise through this mechanism is $\prod_{\ell=1}^{L-1} n_\ell!$.
+
+The second type of symmetry comes from sign flips: whenever the activation $\sigma$ is odd (e.g. tanh), you can pick any hidden neuron in layer $\ell$, multiply it's incoming weights and bias by -1, and at the same time multiply it's outgoing weights by -1, without changing $f_{\theta}$. Since each of the $\sum_{\ell=1}^{L-1} n_\ell$ hidden neurons can be flipped independently, there are $2\sum_{\ell=1}^{L-1} n_\ell$ distinct sign-flip symmetries. 
+
+If an MCMC sampler is unaware of these symmetries, it will waste iterations traversing equioutput duplicates, artificially inflating both the posterior’s modal count and its parameter-space variance. Because many draws add no new information, the effective sample size collapses and Monte Carlo error in credible-interval estimation grows, causing the estimated intervals to appear overly conservative—even though the true predictive uncertainty remains unchanged. By collapsing permutation and sign-flip symmetries up front, the sampler is constrained to explore only genuinely distinct modes, restoring effective sample size, reducing Monte Carlo error, and yielding credible intervals that reflect real functional variation rather than redundant copies.
+
+## Objective
+
+The goal of this paper is to develop and validate a Deep-Ensemble-Initialized MCMC (DEI-MCMC) workflow
+for BNNs that achieves efficient posterior exploration and well-informed uncertainty estimates by removing trivial
+symmetries in weight space. Concretely, I aim to:
+
+1. Train a small ensemble of M randomly-seeded feed-forward NNs, $\{\theta^{(m)}\}_{m=1}^M$.
+
+2. Canonicalize each $\theta^{(m)}$ by neuron-sorting and sign-fixing, so that NNs belonging to the same symmetry group collapse to identical (or nearly identical) canonical forms.
+
+3. Cluster the resulting canonical NNs (using cosine distance) and then select $K (\le M)$ representatives to ensure each final ensemble member lies on a functionally distinct posterior peak.
+
+4. Initialize $K$ parallel NUTS chains with Stan starting at these $\{\tilde{\theta}^{(k)}\}_{k=1}^K$.
+
+5. Assess convergence and evaluate uncertainty calibration via credible-interval coverage and posterior predictive checks.
+
+# Related Work
+
+## BNN Posterior Sampling Methods
+
+@1111.4246 introduces NUTS, an extension of HMC that discards the manually chosen trajectory length 
+$L$. NUTS keeps doubling the leapfrog path until the simulated momentum would reverse toward the start—the “no-u-turn” stop. Together with primal–dual averaging for adaptive step size, this yields a self-tuning, gradient-based MCMC method that matches or beats well-tuned HMC without user calibration. Because manually selecting $L$ and step size in vanilla HMC is notoriously sensitive and labor-intensive, NUTS makes practical Bayesian inference vastly easier and more robust. 
+
+This algorithm is now used by default in Stan, the R library for Bayesian modeling and inference that I used in this project.
+
+## Deep-Ensemble Initialisation (DEI)
+
+@https://doi.org/10.48550/arxiv.2402.01484 show that a deep ensemble (a handful of independently initialised and fully trained neural networks) already lands it's members in separate high-probability basins of the Bayesian posterior.  Starting HMC chains from those pre-optimised weights therefore eliminates much of the costly burn-in phase.  Complementary empirical evidence in @2104.14421 confirms that such ensemble seeds cover the dominant modes encountered by standard HMC, while chains started from random points often fail to reach them within a practical time & compute budget.  In this project I follow that recipe: train a small ensemble, take each member’s weights as an initial state, and launch parallel NUTS chains from those mode-finding seeds to achieve efficient convergence and broad coverage.
+
+
+## Symmetry Detection and Elimination
+
+@https://doi.org/10.48550/arxiv.2304.02902 demonstrate that permutation- and sign-flip symmetries create exponentially many equi-output modes that cripple MCMC efficiency.  They introduce an inexpensive canonicalisation map—sorting neurons within each layer and fixing each neuron’s sign—that collapses every symmetry class to a single representative while preserving the log-likelihood.  Sampling in this reduced space markedly increases effective sample size and stabilises $\bar{R}$ diagnostics.  I adopt this canonicalisation as a preprocessing step so that subsequent NUTS chains explore only genuinely distinct regions of the BNN posterior.
+
+## Mode Connectivity and Sample-Based Inference
+
+Linearly interpolating between two SGD solutions usually produces a high-loss
+ridge, but a series of works beginning with @1802.10026 and refined by
+@1912.02757 show that curved low-loss paths often exist, implying that
+many apparent local optima belong to a larger, connected manifold.  Most
+recently, @https://doi.org/10.48550/arxiv.2402.01484 connect such paths directly to Bayesian inference:
+they sample along the connector using tempering, obtaining predictive
+distributions that rival full HMC at a fraction of the cost.  Although my
+pipeline focuses on isolated mode initialisation rather than traversing
+connectors, these findings reinforce the idea that weight-space distance does
+not automatically translate to functional diversity, motivating my additional
+clustering step using cosine similarity in the canonical parameter space.
+
+# Methods
+
+## DEI-MCMC Pipeline
+
+<!-- TODO: Detail the use of a small deep ensemble to initialize MCMC chains -->
+
+## Stan Implementation
+
+<!-- TODO: Explain non-centered parameterization and reduce_sum likelihood for parallel sampling in Stan -->
+
+## Symmetric Mode Removal
+
+<!-- TODO: Describe canonicalization steps: neuron sorting, sign-fixing, and collapsing equivalent members -->
+
+# Simulation Study
+
+## Synthetic Dataset Generation
+
+<!-- TODO: Detail generation of linear, sinusoidal, quadratic, and piecewise datasets -->
+
+## Training Deep Ensembles
+
+<!-- TODO: Describe training procedure for deep ensembles on synthetic data -->
+
+## Stan Model Setup
+
+<!-- TODO: Outline configuration of the Stan BNN model -->
+
+## DEI-MCMC Experiments
+
+<!-- TODO: Specify experiments with and without symmetry removal -->
+
+## Evaluation Metrics
+
+<!-- TODO: List metrics: runtime, convergence diagnostics, posterior-predictive performance -->
+
+## Function Recovery Analysis
+
+<!-- TODO: Check recovery of original generating functions -->
+
+# Application to a Real Dataset
+
+## Dataset Selection and Adaptation
+
+<!-- TODO: Describe choice of UCI dataset and model architecture adaptations -->
+
+## DEI-MCMC Experiments
+
+<!-- TODO: Detail experiments on real data with and without symmetry removal -->
+
+## Performance Evaluation
+
+<!-- TODO: Evaluate predictive accuracy (RMSE, log PPD) and calibration (coverage of credibility intervals) -->
+
+# Discussion
+
+## Simulation Results Summary
+
+<!-- TODO: Summarize findings from simulation study -->
+
+## Real-Data Case Summary
+
+<!-- TODO: Summarize findings from real-data application -->
+
+## Assessment Without Symmetry Removal
+
+<!-- TODO: Discuss uncertainty estimates and runtime without symmetry removal -->
+
+## Assessment With Symmetry Removal
+
+<!-- TODO: Discuss improvements in uncertainty estimation and computational overhead -->
+
+# Conclusion
+
+<!-- TODO: State key takeaways regarding DEI-MCMC and symmetry removal impact -->
+
+# Outlook
+
+<!-- TODO: Propose future directions: integration, larger datasets, GPU acceleration -->
+
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+
+<!-- TODO: Acknowledge contributions and support -->
+
+\chapter*{References}
+\addcontentsline{toc}{chapter}{References}
+
+# References will be generated from references.bib
+
+\newpage
+\onecolumn
+
+# Appendix
+
+## Additional Details
+
+<!-- TODO: Provide any supplementary figures, tables, or methodological details -->

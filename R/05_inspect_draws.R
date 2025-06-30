@@ -17,52 +17,56 @@ load_draws <- function(path) {
   return(draws_mat)
 }
 
-# 2. Summarize a parameter ----------------------------------------------------
-#   draws_mat: matrix from load_draws()
-#   param: a single column name exactly as printed above
-summarize_param <- function(draws_mat, param) {
-  if (!param %in% colnames(draws_mat)) {
-    stop("Parameter '", param, "' not found. Available: ",
-         paste(colnames(draws_mat), collapse=", "))
+# 2. Summarize a parameter (works on draws_df, draws_array, or draws_matrix)  
+summarize_param <- function(draws, param) {
+  # convert file paths → matrix if needed
+  mat <- if (is.character(draws)) {
+    load_and_combine(draws)
+  } else if (inherits(draws, c("draws_array","draws_df","draws_matrix"))) {
+    as_draws_matrix(draws)
+  } else if (is.matrix(draws)) {
+    draws
+  } else {
+    stop("Unsupported draws object; supply a matrix, draws_* or file vector")
   }
-  vec <- draws_mat[, param]
+  if (!param %in% colnames(mat)) {
+    stop("Parameter '",param,"' not found. Available: ",
+         paste(colnames(mat), collapse=", "))
+  }
+  vec <- mat[, param]
   cat("Summary of", param, ":\n")
   print(summary(vec))
   invisible(vec)
 }
 
-# 3. Traceplot of a scalar ----------------------------------------------------
-traceplot_param <- function(draws_mat, param) {
-  vec <- summarize_param(draws_mat, param)
+# 3. Traceplot of a scalar (uses summarize_param under the hood)  
+traceplot_param <- function(draws, param) {
+  vec <- summarize_param(draws, param)
   df  <- data.frame(iter = seq_along(vec), value = vec)
-  ggplot(df, aes(x = iter, y = .data[[param]])) +
+  ggplot(df, aes(x = iter, y = value)) +
     geom_line() +
-    labs(
-      title = paste("Traceplot of", param),
-      x     = "Iteration",
-      y     = param
-    ) +
+    labs(title = paste("Traceplot of", param),
+         x = "Iteration", y = param) +
     theme_minimal()
 }
 
 # 4. Density plot of a scalar -------------------------------------------------
 # draws_mat: a matrix of draws (rows = iterations, cols = vars)
 # param:    a single variable name (e.g. "sigma")
-density_param <- function(draws_mat, param) {
-  if (!param %in% colnames(draws_mat)) {
-    stop("Parameter '", param, "' not found. Available: ",
-         paste(colnames(draws_mat), collapse = ", "))
-  }
-  vec <- draws_mat[, param, drop = TRUE]
-  df  <- data.frame(value = vec)
-  
-  ggplot(df, aes(x = .data$value)) +
+density_param <- function(draws, param) {
+  mat <- if (is.character(draws)) {
+    load_and_combine(draws)
+  } else if (inherits(draws, c("draws_array","draws_df","draws_matrix"))) {
+    as_draws_matrix(draws)
+  } else if (is.matrix(draws)) {
+    draws
+  } else stop("Unsupported draws object")
+  if (!param %in% colnames(mat)) stop("Param not found")
+  df <- data.frame(value = mat[, param])
+  ggplot(df, aes(x = value)) +
     geom_density(fill = "steelblue", alpha = 0.5) +
-    labs(
-      title = paste("Posterior density of", param),
-      x     = param,
-      y     = "Density"
-    ) +
+    labs(title = paste("Posterior density of", param),
+         x = param, y = "Density") +
     theme_minimal()
 }
 
@@ -731,3 +735,162 @@ plot_pd_credible_band <- function(
     theme_minimal()
 }
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Utility: load & combine an arbitrary number of chain files into a matrix
+# draw_files: character vector of paths to your *_MCMC_draws.rds
+# returns: a matrix (draws × parameters)
+load_and_combine <- function(draw_files) {
+  dfs <- lapply(seq_along(draw_files), function(i) {
+    arr <- load_draws(draw_files[i])
+    df  <- as_draws_df(arr)
+    df$.chain     <- i
+    df$.iteration <- seq_len(nrow(df))
+    df
+  })
+  arr_all <- as_draws_array(do.call(rbind, dfs))
+  as_draws_matrix(arr_all)
+}
+
+plot_pd_credible_band <- function(
+    draw_files,         # vector of *_MCMC_draws.rds paths (length ≥ 1)
+    dataset_rds_path,   # "data/uci/airfoil_dataset.rds"
+    scaler_rds_path,    # "data/uci/airfoil_scaler.rds"
+    H1, H2, H3,         # hidden layer sizes
+    level = 0.90,       # credible level
+    n_grid = 100        # points per feature
+) {
+  # 1) load & combine all chains
+  mat <- load_and_combine(draw_files)
+  cn  <- colnames(mat)
+  
+  # helper: extract parameter slices
+  get_vec <- function(i, prefix, dims) {
+    if (length(dims) == 1) {
+      # scalar or vector
+      if (dims == 1 && prefix %in% cn) return(mat[i, prefix])
+      cols <- paste0(prefix, "[", seq_len(dims), "]")
+      return(as.numeric(mat[i, cols]))
+    }
+    # matrix case
+    rows <- dims[1]; cols <- dims[2]
+    names <- as.vector(outer(seq_len(rows), seq_len(cols),
+                             function(r,c) sprintf("%s[%d,%d]", prefix, r, c)))
+    matrix(mat[i, names], nrow = rows, byrow = FALSE)
+  }
+  
+  # 2) raw data & scaler
+  df_raw <- readRDS(dataset_rds_path)
+  scaler <- readRDS(scaler_rds_path)
+  features <- names(scaler$feature_means)
+  
+  # 3) build credible‐band for each feature
+  pd_list <- lapply(features, function(feat) {
+    x_seq <- seq(min(df_raw[[feat]]), max(df_raw[[feat]]),
+                 length.out = n_grid)
+    # matrix draws × grid
+    pd_mat <- sapply(x_seq, function(xj) {
+      # build input: this feat = xj, others = median(raw)
+      x0 <- sapply(features, function(f)
+        if (f==feat) xj else median(df_raw[[f]]))
+      names(x0) <- features
+      # log-transform + scale
+      x0["Frequency"] <- log1p(x0["Frequency"])
+      x_sc <- (x0 - scaler$feature_means) / scaler$feature_sds
+      
+      # forward pass for each draw
+      sapply(seq_len(nrow(mat)), function(i) {
+        W1 <- get_vec(i, "W1", c(H1, length(features)))
+        b1 <- get_vec(i, "b1", H1)
+        W2 <- get_vec(i, "W2", c(H2, H1))
+      b2 <- get_vec(i, "b2", H2)
+      W3 <- get_vec(i, "W3", c(H3, H2))
+    b3 <- get_vec(i, "b3", H3)
+    w4 <- get_vec(i, "w4", H3)
+    b4 <- get_vec(i, "b4", 1)
+    a1 <- tanh(W1 %*% x_sc + b1)
+    a2 <- tanh(W2 %*% a1    + b2)
+    a3 <- tanh(W3 %*% a2    + b3)
+    as.numeric(w4 %*% a3   + b4)
+      })
+    })
+tibble(
+  Feature = feat,
+  Value   = x_seq,
+  qlow    = apply(pd_mat, 2, quantile, (1-level)/2),
+  qmid    = apply(pd_mat, 2, quantile, 0.5),
+  qhi     = apply(pd_mat, 2, quantile, 1-(1-level)/2)
+)
+  })
+pd_all <- bind_rows(pd_list)
+
+# 4) plot
+ggplot(pd_all, aes(x = Value)) +
+  geom_ribbon(aes(ymin = qlow, ymax = qhi),
+              fill = "steelblue", alpha = 0.3) +
+  geom_line(aes(y = qmid), color = "steelblue", size = 1) +
+  facet_wrap(~ Feature, scales = "free_x") +
+  labs(
+    title = sprintf("%.1f%% Credible Partial‐Dependence", level*100),
+    x = "Feature value",
+    y = "Predicted SoundPressure"
+  ) +
+  theme_minimal()
+}
+
+
+# Overlay traceplot for any number of chains
+traceplot_chains <- function(draws, param) {
+  # draws: either
+  #  • a character vector of file paths to *_MCMC_draws.rds, or
+  #  • a posterior::draws_array / draws_df with .chain and .iteration, or
+  #  • a data.frame already in draws_df form
+  
+  # 1) Build a single data.frame with columns .chain, .iteration, and all parameters
+  df_all <- NULL
+  if (is.character(draws)) {
+    dfs <- lapply(seq_along(draws), function(i) {
+      df_i <- as_draws_df(load_draws(draws[i]))
+      df_i$.chain     <- i
+      df_i$.iteration <- seq_len(nrow(df_i))
+      df_i
+    })
+    df_all <- do.call(rbind, dfs)
+  } else if (inherits(draws, "draws_array")) {
+    df_all <- as_draws_df(draws)
+    if (!(".chain" %in% names(df_all))) stop("draws_array must include .chain")
+    if (!(".iteration" %in% names(df_all))) {
+      df_all$.iteration <- rep(seq_len(nrow(df_all)/length(unique(df_all$.chain))),
+                               times = length(unique(df_all$.chain)))
+    }
+  } else if (is.data.frame(draws) &&
+             all(c(".chain", ".iteration") %in% names(draws))) {
+    df_all <- draws
+  } else {
+    stop("Unsupported input. Provide file paths or a draws_array/draws_df.")
+  }
+  
+  # 2) Check parameter exists
+  if (!param %in% colnames(df_all)) {
+    stop("Parameter '", param, "' not found in draws.")
+  }
+  
+  # 3) Plot
+  ggplot(df_all, aes(x = .iteration, y = .data[[param]], color = factor(.chain))) +
+    geom_line(size = 1) +
+    scale_color_manual(
+      name   = "Chain",
+      values = c(
+        "1" = "#1B9E77",
+        "2" = "#D95F02",
+        "3" = "#7570B3",
+        "4" = "#E7298A"
+      )
+    ) +
+    labs(
+      title = paste("Traceplot of", param),
+      x     = "Iteration",
+      y     = param
+    ) +
+    theme_minimal()
+}

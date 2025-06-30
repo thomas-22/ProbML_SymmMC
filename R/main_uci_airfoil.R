@@ -120,35 +120,44 @@ run_dei_mcmc_airfoil(
   H3                 = 8
 )
 
-#05 Inspect result of DEI MCMC
-draws1 <- load_draws("results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds")
-draws2 <- load_draws("results/mcmc_airfoil/airfoil_member02_canon_MCMC_draws.rds")
+chain_files <- sprintf(
+  "results/mcmc_airfoil/airfoil_member%02d_canon_MCMC_draws.rds",
+  1:4
+)
 
-df1 <- as_draws_df(draws1)
-df2 <- as_draws_df(draws2)
+chain_dfs <- lapply(seq_along(chain_files), function(i) {
+  draws <- load_draws(chain_files[i])
+  df    <- as_draws_df(draws)
+  df$.chain     <- i
+  df$.iteration <- seq_len(nrow(df))
+  df
+})
 
-df1$.chain <- 1L
-df1$.iteration <- seq_len(nrow(df1))
-df2$.chain <- 2L
-df2$.iteration <- seq_len(nrow(df2))
+df_all <- do.call(rbind, chain_dfs)
+da_all  <- as_draws_array(df_all)
 
-df_both <- rbind(df1, df2)
+rhat_vals    <- rhat(da_all)
+ess_bulk_vals <- ess_bulk(da_all)
 
-both <- as_draws_array(df_both)
+print(rhat_vals)      # should be ≈ 1 for every parameter
+print(ess_bulk_vals)  # total ESS across all 4 chains
 
+summarize_param(df_all, "sigma")
+traceplot_chains(sprintf("results/mcmc_airfoil/airfoil_member%02d_canon_MCMC_draws.rds", 1:4),
+                 "sigma")
 
-rhat(both)
-
-ess_bulk(both)
-
-summarize_param(draws1, "sigma")
-summarize_param(draws2, "sigma")
-
-traceplot_param(draws1,   "sigma")
-traceplot_param(draws2,   "sigma")
-
-density_param(draws1,     "sigma")
+density_param(df_all,     "sigma")
 density_param(draws2,     "sigma")
+
+plot_pd_credible_band(
+  draw_files       = sprintf("results/mcmc_airfoil/airfoil_member%02d_canon_MCMC_draws.rds", 1:4),
+  dataset_rds_path = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path  = "data/uci/airfoil_scaler.rds",
+  H1 = 16, H2 = 16, H3 = 8,
+  level = 0.90,
+  n_grid = 100
+)
+
 
 # posterior mean PD
 plot_posterior_predictive_mean_uciairfoil(
