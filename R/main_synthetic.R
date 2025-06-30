@@ -21,9 +21,9 @@ simulate_data(n_points = 1500,
 run_ensemble_pipeline(
   data_path     = "data/synthetic",
   ensemble_size = 4,
-  epochs        = 250,
-  batch_size    = 32,
-  hidden_units  = c(64, 64, 32),
+  epochs        = 150,
+  batch_size    = 16,
+  hidden_units  = c(16, 16, 8),
   activation    = "tanh",
   output_units  = 1,
   save_path     = "results/ensemble_synth"
@@ -55,7 +55,7 @@ cluster_canonical_models(
 
 # Show canonicalized NN
 predict_x_vs_y(
-  model_path = "results/ensemble_synth/sin_dataset_member02_canon.keras",
+  model_path = "results/ensemble_synth/sin_dataset_member01_canon.keras",
   data_path  = "data/synthetic/sin_dataset.rds"
 )
 
@@ -66,16 +66,17 @@ bnn_stan <- compile_synth_stan()
 run_dei_mcmc(
   dataset_names     = "sin",
   init_file         = "results/ensemble_synth/canon_cluster_eval/sin_reps_cosine.txt",
-  members_count     = 2,      # if = 0 : use every model in init_file
-  warmup_steps      = 400,
-  sampling_steps    = 200,
-  refresh           = 25,
+  members_count     = 4,      # if = 0 : use every model in init_file
+  warmup_steps      = 300,
+  sampling_steps    = 100,
+  refresh           = 1,
   adapt_delta       = 0.95,
-  max_treedepth     = 12,
+  max_treedepth     = 15,
   subsample_frac    = 1,
-  threads_per_chain = 6,
+  threads_per_chain = 3,
   data_path         = "data/synthetic",
-  output_path       = "results/mcmc_draws"
+  output_path       = "results/mcmc_draws",
+  H1 = 16, H2 = 16, H3 = 8
 )
 
 #05 Inspect result of DEI MCMC
