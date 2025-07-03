@@ -78,26 +78,40 @@ res <- cluster_canonical_models(
 )
 
 # Show canonicalized NN
-predict_airfoil_vs_y_all_features(
-  model_path         = "results/ensemble_airfoil/airfoil_member01_canon.keras",
-  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
-  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+# predict_airfoil_vs_y_all_features(
+#   model_path         = "results/ensemble_airfoil/airfoil_member01_canon.keras",
+#   dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+#   scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+# )
+# predict_airfoil_vs_y_all_features(
+#   model_path         = "results/ensemble_airfoil/airfoil_member02_canon.keras",
+#   dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+#   scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+# )
+# predict_airfoil_vs_y_all_features(
+#   model_path         = "results/ensemble_airfoil/airfoil_member03_canon.keras",
+#   dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+#   scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+# )
+# predict_airfoil_vs_y_all_features(
+#   model_path         = "results/ensemble_airfoil/airfoil_member04_canon.keras",
+#   dataset_rds_path   = "data/uci/airfoil_dataset.rds",
+#   scaler_rds_path    = "data/uci/airfoil_scaler.rds"
+# )
+
+compare_partial_dependence_models(
+  model_paths      = c(
+    "results/ensemble_airfoil/airfoil_member01_canon.keras",
+    "results/ensemble_airfoil/airfoil_member02_canon.keras",
+    "results/ensemble_airfoil/airfoil_member03_canon.keras",
+    "results/ensemble_airfoil/airfoil_member04_canon.keras"
+  ),
+  model_labels     = c("01_canon", "02_canon", "03_canon", "04_canon"),
+  dataset_rds_path = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path  = "data/uci/airfoil_scaler.rds",
+  n.grid           = 100
 )
-predict_airfoil_vs_y_all_features(
-  model_path         = "results/ensemble_airfoil/airfoil_member02_canon.keras",
-  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
-  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
-)
-predict_airfoil_vs_y_all_features(
-  model_path         = "results/ensemble_airfoil/airfoil_member03_canon.keras",
-  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
-  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
-)
-predict_airfoil_vs_y_all_features(
-  model_path         = "results/ensemble_airfoil/airfoil_member04_canon.keras",
-  dataset_rds_path   = "data/uci/airfoil_dataset.rds",
-  scaler_rds_path    = "data/uci/airfoil_scaler.rds"
-)
+
 
 #04 Run MCMC Chains that are initialized at the location of the NNs in the parameter space
 # Example debug run
@@ -184,8 +198,57 @@ plot_posterior_ensemble_and_dei(
   scaler_rds_path   = "data/uci/airfoil_scaler.rds",
   H1 = 16, H2 = 16, H3 = 8,
   n.grid    = 150,
-  num_draws = 20,
+  num_draws = 1,
   seed      = 42
+)
+
+
+#01
+plot_posterior_and_single_dei(
+  draw_file         = "results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds",
+  nn_model_path     = "results/ensemble_airfoil/airfoil_member01_canon.keras",
+  dataset_rds_path  = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path   = "data/uci/airfoil_scaler.rds",
+  H1 = 16, H2 = 16, H3 = 8,
+  n.grid    = 150,
+  num_draws = 125,
+  nn_psample_color = "#1B9E77"
+)
+
+#02
+plot_posterior_and_single_dei(
+  draw_file         = "results/mcmc_airfoil/airfoil_member02_canon_MCMC_draws.rds",
+  nn_model_path     = "results/ensemble_airfoil/airfoil_member02_canon.keras",
+  dataset_rds_path  = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path   = "data/uci/airfoil_scaler.rds",
+  H1 = 16, H2 = 16, H3 = 8,
+  n.grid    = 150,
+  num_draws = 125,
+  nn_psample_color = "#D95F02"
+)
+
+#03
+plot_posterior_and_single_dei(
+  draw_file         = "results/mcmc_airfoil/airfoil_member03_canon_MCMC_draws.rds",
+  nn_model_path     = "results/ensemble_airfoil/airfoil_member03_canon.keras",
+  dataset_rds_path  = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path   = "data/uci/airfoil_scaler.rds",
+  H1 = 16, H2 = 16, H3 = 8,
+  n.grid    = 150,
+  num_draws = 125,
+  nn_psample_color = "#7570B3"
+)
+
+#04
+plot_posterior_and_single_dei(
+  draw_file         = "results/mcmc_airfoil/airfoil_member04_canon_MCMC_draws.rds",
+  nn_model_path     = "results/ensemble_airfoil/airfoil_member04_canon.keras",
+  dataset_rds_path  = "data/uci/airfoil_dataset.rds",
+  scaler_rds_path   = "data/uci/airfoil_scaler.rds",
+  H1 = 16, H2 = 16, H3 = 8,
+  n.grid    = 150,
+  num_draws = 125,
+  nn_psample_color = "#E7298A"
 )
 
 

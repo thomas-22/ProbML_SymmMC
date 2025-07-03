@@ -144,9 +144,11 @@ cluster_canonical_models <- function(
   message("Pairwise centroid distances:")
   print(round(centroid_dist, 4))
   
-  # Write representative paths to file
-  writeLines(reps, con = output_file)
-  message("Representatives written to: ", output_file)
+  if (is.null(output_file) == FALSE) {
+    # Write representative paths to file
+    writeLines(reps, con = output_file)
+    message("Representatives written to: ", output_file)
+  }
   
   # Return reps and centroid distances invisibly
   invisible(list(

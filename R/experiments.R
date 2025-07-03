@@ -107,3 +107,91 @@ df     <- readRDS("data/uci/airfoil_dataset_scaled.rds")
 x_scaled <- info$x_scaled
 y_vec    <- df$SoundPressure
 N <- nrow(x_scaled); D <- ncol(x_scaled)
+
+
+
+
+
+
+
+
+
+library(posterior)
+
+# 1) List your 4 chain files
+chain_files <- sprintf("results/mcmc_airfoil/airfoil_member%02d_canon_MCMC_draws.rds", 1:4)
+
+# 2) Turn each into a draws_df with a .chain column
+chain_dfs <- lapply(seq_along(chain_files), function(i) {
+  d <- load_draws(chain_files[i])
+  df <- as_draws_df(d)
+  df$.chain     <- i
+  df$.iteration <- seq_len(nrow(df))
+  df
+})
+
+# 3) Stack them into one big data.frame
+df_all <- do.call(rbind, chain_dfs)
+
+# 4) Convert back to a proper draws_array
+da_all <- as_draws_array(df_all)
+
+# 5) Summarize
+sum_stats <- summarize_draws(da_all)
+
+mean(sum_stats$ess_bulk)
+
+
+
+# 6) Pull out only the diagnostics you want
+diag_df <- sum_stats[, c("variable", "rhat", "ess_bulk")]
+
+# 1) Compute averages
+avg_rhat <- mean(diag_df$rhat)
+avg_ess  <- mean(diag_df$ess_bulk)
+
+# 2) (Optional) Compute min/max to get a sense of spread
+min_rhat <- min(diag_df$rhat)
+max_rhat <- max(diag_df$rhat)
+min_ess  <- min(diag_df$ess_bulk)
+max_ess  <- max(diag_df$ess_bulk)
+
+# 3) Print a little summary
+cat(sprintf(
+  "R̂  : mean = %.3f,  min = %.3f,  max = %.3f\nESS : mean = %.1f, min = %.1f, max = %.1f\n",
+  avg_rhat, min_rhat, max_rhat,
+  avg_ess,  min_ess,  max_ess
+))
+
+
+
+test <- load_draws("results/mcmc_airfoil/airfoil_member01_canon_MCMC_draws.rds")
+test_da <- as_draws_array(test)
+summarize_test <- summarize_draws(test_da)
+mean(summarize_test$ess_bulk)
+
+test <- load_draws("results/mcmc_airfoil/airfoil_member02_canon_MCMC_draws.rds")
+test_da <- as_draws_array(test)
+summarize_test <- summarize_draws(test_da)
+mean(summarize_test$ess_bulk)
+
+test <- load_draws("results/mcmc_airfoil/airfoil_member03_canon_MCMC_draws.rds")
+test_da <- as_draws_array(test)
+summarize_test <- summarize_draws(test_da)
+mean(summarize_test$ess_bulk)
+
+test <- load_draws("results/mcmc_airfoil/airfoil_member04_canon_MCMC_draws.rds")
+test_da <- as_draws_array(test)
+summarize_test <- summarize_draws(test_da)
+mean(summarize_test$ess_bulk)
+
+
+
+
+
+
+
+
+
+
+

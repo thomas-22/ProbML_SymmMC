@@ -128,7 +128,7 @@ predict_x_vs_y <- function(
   plot_df <- tibble(x = x, actual = y_true, predicted = y_pred) %>%
     arrange(x)
   ggplot(plot_df, aes(x = x)) +
-    geom_point(aes(y = actual, color = "Actual"), alpha = 0.6) +
+    geom_point(aes(y = actual, color = "Actual"), alpha = 0.25, size = 0.7) +
     geom_line(aes(y = predicted, color = "Predicted"), size = 1) +
     geom_line(aes(y = sin(2 * pi * x / 2), color = "True Process"),
               size = 1, linetype = "dashed") +
@@ -136,13 +136,68 @@ predict_x_vs_y <- function(
       name = NULL,
       values = c(
         Actual        = "blue",
-        Predicted     = "red",
-        "True Process" = "green"
+        Predicted     = "orange",
+        "True Process" = "red"
       )
     ) +
     labs(title = basename(model_path), x = "x", y = "y value") +
     theme_minimal()
 }
+
+
+plot_predict_x_vs_y_facets <- function(
+    model_paths,  # character vector of paths to saved .keras models
+    data_path,    # path to the .rds containing a data.frame/tibble with columns x and y
+    ncol = 2      # number of columns in the facet grid
+) {
+  library(keras)
+  library(dplyr)
+  library(purrr)
+  library(ggplot2)
+  
+  # load the raw data once
+  df <- readRDS(data_path)
+  
+  # assemble predictions + labels
+  all_preds <- map_dfr(model_paths, function(path) {
+    m       <- load_model_tf(path)
+    x       <- df$x
+    y_obs   <- df$y
+    y_hat   <- as.numeric(m %>% predict(matrix(x, ncol = 1)))
+    fname   <- basename(path)
+    member  <- sub(".*member([0-9]{2})_canon\\.keras$", "\\1", fname)
+    tibble(
+      x           = x,
+      actual      = y_obs,
+      predicted   = y_hat,
+      facet_label = paste0("Simulation Study, Ensemble Member ", member)
+    )
+  }) %>% arrange(facet_label, x)
+  
+  # plot
+  ggplot(all_preds, aes(x = x)) +
+    geom_point(aes(y = actual, color = "Actual"),
+               alpha = 0.25, size = 0.7) +
+    geom_line(aes(y = predicted, color = "Predicted"),
+              size = 1) +
+    geom_line(aes(y = sin(2 * pi * x / 2), color = "True Process"),
+              size = 1, linetype = "dashed") +
+    scale_color_manual(
+      name   = NULL,
+      values = c(
+        Actual        = "blue",
+        Predicted     = "orange",
+        "True Process" = "red"
+      )
+    ) +
+    facet_wrap(~ facet_label, ncol = ncol) +
+    labs(x = "x", y = "y value") +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 10, face = "bold")
+    )
+}
+
 
 #UCI Airfoil specific functions
 
@@ -406,5 +461,87 @@ predict_airfoil_vs_y_all_features <- function(
     ) +
     theme_minimal()
 }
+
+compare_partial_dependence_models <- function(
+    model_paths,
+    model_labels = basename(model_paths),
+    dataset_rds_path,
+    scaler_rds_path,
+    n.grid = 100
+) {
+  library(dplyr)
+  library(tidyr)
+  library(purrr)
+  library(ggplot2)
+  
+  # 1) load raw data & scaler
+  df_raw <- readRDS(dataset_rds_path)
+  scaler <- readRDS(scaler_rds_path)
+  features <- names(scaler$feature_means)
+  
+  # 2) compute feature‐means (after log1p on Frequency) for grid baseline
+  df_means <- df_raw %>%
+    mutate(Frequency = log1p(Frequency)) %>%
+    summarise(across(all_of(features), mean, na.rm = TRUE))
+  
+  # 3) build a big data.frame of predictions:
+  pd_all <- map2_dfr(model_paths, model_labels, function(path, lbl) {
+    model <- load_model_tf(path)
+    map_df(features, function(feat) {
+      # make a grid on the *raw* feature scale
+      x.seq <- seq(min(df_raw[[feat]], na.rm=TRUE),
+                   max(df_raw[[feat]], na.rm=TRUE),
+                   length.out = n.grid)
+      # replicate the mean‐row and swap in this feature’s grid
+      dfg <- as.data.frame(df_means[rep(1, n.grid), ])
+      dfg[[feat]] <- x.seq
+      # apply the same log1p+scaling on Frequency
+      dfg$Frequency <- log1p(dfg$Frequency)
+      x.raw    <- as.matrix(dfg[, features])
+      x.scaled <- sweep(x.raw, 2, scaler$feature_means, "-")
+      x.scaled <- sweep(x.scaled, 2, scaler$feature_sds,   "/")
+      # predict & undo target scaling if needed
+      ypred <- as.numeric(model %>% predict(x.scaled))
+      if (!is.null(scaler$target_mean)) {
+        ypred <- ypred * scaler$target_sd + scaler$target_mean
+      }
+      tibble(
+        Feature   = feat,
+        Value     = x.seq,
+        Predicted = ypred,
+        Model     = lbl
+      )
+    })
+  })
+  
+  # 4) pivot the raw data for scatter
+  raw_long <- df_raw %>%
+    rename(Actual = SoundPressure) %>%
+    mutate(Frequency = Frequency) %>%
+    pivot_longer(all_of(features),
+                 names_to  = "Feature",
+                 values_to = "Value")
+  
+  # 5) plot them all together
+  ggplot() +
+    geom_point(data = raw_long,
+               aes(x = Value, y = Actual),
+               color = "blue", size = 0.5, alpha = 0.2) +
+    geom_line(data = pd_all,
+              aes(x = Value, y = Predicted, color = Model),
+              size = 1) +
+    facet_wrap(~ Feature, scales = "free_x", ncol = 4) +
+    scale_color_brewer("Model", palette = "Dark2") +
+    labs(
+      title = "UCI Airfoil: Partial Dependence Comparison between all 4 NNs",
+      x     = "Feature value",
+      y     = "SoundPressure"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+}
+
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 
