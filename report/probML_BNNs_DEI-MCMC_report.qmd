@@ -411,11 +411,11 @@ cat("\\end{minipage}\n")
 \begin{figure}[H]
   \centering
   \includegraphics[width=1\textwidth]{../results/Figures/uci_pd_comp_4nn.png}
-  \caption{Partial Dependence Comparison between all 4 canonicalized NNs}
+  \caption{Partial Dependence comparison between all 4 canonicalized NNs}
   \label{fig:fig-uci_ensemble_facet}
 \end{figure}
 
-Figure 4 presents the partial‐dependence curves for each of the four canonical ensemble members across all input features. Each network produces visibly different response patterns and when viewed alongside the high pairwise cosine distances in Table 4, this confirms that the models occupy functionally distinct modes in the BNN posterior.
+Figure 3 presents the partial‐dependence curves for each of the four canonical ensemble members across all input features. Each network produces visibly different response patterns and when viewed alongside the high pairwise cosine distances in Table 4, this confirms that the models occupy functionally distinct modes in the BNN posterior.
 
 ```{r canon-distances-airfoil, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 library(proxy)
@@ -542,22 +542,29 @@ cat("\\end{minipage}\n")
 
 \begin{figure}[H]
   \centering
+  \includegraphics[width=1\textwidth]{../results/Figures/airfoil_pd_dei_01.png}
+  \caption{Partial dependence for \texttt{airfoil\_member01\_canon}: posterior samples and 90\,\% credible band}
+  \label{fig:uci-pd-dei-01}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
   \includegraphics[width=1\textwidth]{../results/Figures/airfoil_pd_dei_02.png}
-  \caption{Partial dependence for \texttt{airfoil\_member02\_canon}: posterior samples and 90\,\% credible band widening where data variability is highest.}
+  \caption{Partial dependence for \texttt{airfoil\_member02\_canon}: posterior samples and 90\,\% credible band}
   \label{fig:uci-pd-dei-02}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=1\textwidth]{../results/Figures/airfoil_pd_dei_03.png}
-  \caption{Partial dependence for \texttt{airfoil\_member03\_canon}: posterior samples and 90\,\% credible band widening where data variability is highest.}
+  \caption{Partial dependence for \texttt{airfoil\_member03\_canon}: posterior samples and 90\,\% credible band}
   \label{fig:uci-pd-dei-03}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=1\textwidth]{../results/Figures/airfoil_pd_dei_04.png}
-  \caption{Partial dependence for \texttt{airfoil\_member04\_canon}: posterior samples and 90\,\% credible band widening where data variability is highest.}
+  \caption{Partial dependence for \texttt{airfoil\_member04\_canon}: posterior samples and 90\,\% credible band}
   \label{fig:uci-pd-dei-04}
 \end{figure}
 
@@ -603,7 +610,7 @@ Several avenues could extend this work from a proof-of-concept into a robust too
 
 First, larger and more diverse ensembles should reduce the risk of missing functionally unique modes. A systematic sweep that grows the ensemble size until additional members cease to enlarge the posterior support—measured, for example, by the clustering distances already used here—would quantify the diminishing returns of more seeds and help formalise the trade-off between number of chains and compute time.
 
-Second, recent findings on mode connectivity suggest that many apparent optima are merely well-separated points on a low-loss manifold (@garipov2018loss; @fort2019deep). Bridging canonicalized modes with curved “connectors” and letting HMC sample along those paths, rather than inside isolated basins, could merge formerly disconnected weight-space islands into a single, navigable region—potentially reducing the number of required chains even further.
+Second, recent findings on mode connectivity suggest that many apparent optima are merely well-separated points on a low-loss manifold (@garipov2018loss; @fort2019deep). Bridging canonicalized modes with curved “connectors” and letting HMC sample along those paths, rather than inside isolated modes, could merge formerly disconnected weight-space islands into a single, navigable region—potentially reducing the number of required chains even further.
 
 Third, the workflow now runs in Stan on a single CPU. Porting the model to GPU-enabled frameworks such as NumPyro, PyTorch + Pyro or TensorFlow Probability would make gradient evaluations orders of magnitude faster and unlock bigger architectures. Until Stan gains first-class CUDA support, a lightweight re-implementation of the canonicalization map in JAX followed by NumPyro’s GPU-native NUTS seems like the most direct path.
 
@@ -682,13 +689,13 @@ previously presented to another examination board and has not been published.
 \chapter*{Declaration of AI use}
 \addcontentsline{toc}{chapter}{Declaration of AI use}
 
-The author acknowledges the use of AI tools throughout the preparation of work. In particular, o3 and o4-mini-high were employed for brainstorming, gaining a general understanding of the subject matter, identifying relevant sources and generating ideas for further steps. 
+The author acknowledges the use of AI tools throughout the preparation of work. In particular, ChatGPT o3 and ChatGPT o4-mini-high were employed for brainstorming, gaining a general understanding of the subject matter, identifying relevant sources and generating ideas for further steps. 
 
 Any code that wasn't fully manually written was aided by o4mini-high almost exclusively; however, every code snippet produced by the model was manually reviewed, tested and most often manually changed to ensure clarity and correctness. 
 
-Claude Sonnet 4 was employed selectively to assist with debugging the Stan model. o4mini-high also supported the author’s comprehension of the Keras & Stan library.
+Claude Sonnet 4 was employed selectively to assist with debugging the Stan model. ChatGPT o4mini-high also supported the author’s comprehension of the Keras & Stan library.
 
-All text in this report was initially drafted by hand, then partly rephrased by o3 to improve readability and flow and finally manually edited to ensure accuracy and style consistency.
+All text in this report was initially drafted by hand, then partly rephrased by ChatGPT o3 to improve readability and flow and finally manually edited to ensure accuracy and style consistency.
 
 All information was crosschecked manually with relevant verified sources.
 
