@@ -263,3 +263,26 @@ plot_pd_credible_band(
   level = 0.90,
   n_grid = 100
 )
+
+######
+
+chain_files <- sprintf(
+  "results/mcmc_airfoil/airfoil_member%02d_canon_MCMC_draws.rds",
+  1:4
+)
+
+# 1) Read in or bind your chains
+da <- bind_draws(lapply(chain_files, function(path) {
+  as_draws_array(load_draws(path))
+}), along = "chain")
+
+#DONT RUN; CRASHES R SESSION:
+# 2) Plot all parameters (auto-picks cols .chain, .iteration, everything else)
+traceplot_all_chains(da, ncol = 2)
+
+# 3) Or just a few, e.g. only the noise sigma and one weight
+traceplot_all_chains(da,
+                     pars = c("sigma", "W1[1,1]"),
+                     ncol = 1
+)
+######

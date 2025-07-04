@@ -112,6 +112,8 @@ da <- bind_draws(lapply(chain_files_synth, function(path) {
   as_draws_array(load_draws(path))
 }), along = "chain")
 
+
+#DONT RUN; CRASHES R SESSION:
 # 2) Plot all parameters (auto-picks cols .chain, .iteration, everything else)
 traceplot_all_chains(da, ncol = 2)
 

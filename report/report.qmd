@@ -9,8 +9,9 @@ subtitle: "[s25] BA-Seminar: Probabilistic ML (Bothmann)"
 author: 
     - name: "Thomas Witzani\n
     
-    Ludwig-Maximilians-Universität München"
+    Ludwig-Maximilians-Universität\nMünchen"
 date: "Munich, 04 July 2025"
+date-format: "4. Juli 2025"
 lang: en
 
 format:
@@ -95,9 +96,9 @@ format:
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
 
-Bayesian neural networks (BNNs) generalize standard neural networks (NNs) by placing probability distributions over weights (@neal1996bayesian & @bishop2006approximate) rather than relying on single point estimates. This enables principled quantification of predictive uncertainty (@gal2016dropout). In this work, I develop and evaluate a Deep-Ensemble-Initialized MCMC (DEI-MCMC) workflow that trains a small ensemble of randomly-seeded networks, canonicalizes each network by neuron-sorting and sign-fixing, then clusters those canonicalized versions via cosine distance to select representatives on truly distinct posterior modes and uses those representatives to seed parallel "No U-Turn Sampler (NUTS)" (adaptive Hamiltonian Monte Carlo (HMC)) chains in Stan.
+Bayesian neural networks (BNNs) generalize standard neural networks (NNs) by placing probability distributions over weights (@neal1996bayesian & @bishop2006approximate) rather than relying on single point estimates. This enables principled quantification of predictive uncertainty (@gal2016dropout). In this work, I develop and evaluate a Deep-Ensemble-Initialized Markov Chain Monte Carlo (DEI-MCMC) workflow that trains a small ensemble of randomly-seeded networks, canonicalizes each network by neuron-sorting and sign-fixing, then clusters those canonicalized versions via cosine distance to select representatives on truly distinct posterior modes and uses those representatives to seed parallel "No U-Turn Sampler (NUTS)" (adaptive Hamiltonian Monte Carlo (HMC)) chains in Stan (@betancourt2017conceptual).
 
-In a simulation study on a noisy sinusoidal function I tuned the workflow, tested methods and calibrated functions. Finally, I apply DEI-MCMC to the Airfoil Self-Noise dataset from the University of California, Irvine (UCI) and demonstrate that symmetry-aware initialization broadens credible intervals only where genuine posterior ambiguity exists, while preserving tight uncertainty elsewhere. Convergence diagnostics, posterior predictive checks, and partial-dependence uncertainty bands all confirm that the sampler mixes well and yields calibrated predictive performance. These results establish that symmetry-aware ensemble initialization delivers efficient exploration of complex BNN posteriors and robust, interpretable uncertainty estimates with moderate computational overhead.
+In a simulation study on a noisy sinusoidal function I tuned the workflow, tested methods and calibrated my approach. Finally, I apply DEI-MCMC to the UCI Airfoil Self-Noise dataset, demonstrating that symmetry-aware initialization selectively expands credible intervals in regions of genuine model disagreement while preserving narrow uncertainty elsewhere. Although the Airfoil posterior—in a parameter space modestly larger (~513 vs. ~449 dimensions)—yields more conservative mixing diagnostics, posterior predictive checks and feature-wise partial-dependence bands reveal that the sampler nonetheless captures meaningful uncertainty patterns. These findings confirm that canonicalized deep-ensemble seeding enables efficient exploration of challenging BNN posteriors and delivers robust, interpretable uncertainty estimates at a modest compute budget.
 
 # Introduction & Motivation
 
@@ -120,8 +121,9 @@ $$
 &f_{\theta}(x)=W^{(L+1)}\,h^{(L)}+b^{(L+1)}
 \end{aligned}
 $$
-where each $\sigma$ is a nonlinear activation. @hornik1989multilayer showed that for sufficiently large width this family can approximate any continuous function 
-on a compact domain up to a closeness $\epsilon > 0$.
+where each $\sigma$ is a nonlinear activation. @hornik1989multilayer showed that for any compact set $K \subset \mathbb{R}^d$ and any $\varepsilon > 0$, there exists a single‐hidden‐layer network of sufficient width such that $$\sup_{x \in K}\bigl|f(x) - f_\theta(x)\bigr| < \varepsilon$$
+i.e. NNs are universal approximators in the uniform norm.
+
 
 In a BNN we treat $\theta$ as a random variable with a prior
 $p(\theta)$ and observe the data
@@ -252,7 +254,7 @@ A 3 hidden-layer feed‐forward network on scalar inputs ($D=1$) is implemented 
 ### UCI Airfoil
 
 The same design extends to $D=5$ features by flattening the first weight matrix into a vector
-$z_{W1flat}$. Remaining layers use non-centered $z$-matrices and vectors with shared log-normal scales and a single noise parameter $\sigma$. Again, Stan’s `reduce_sum` was used.
+$z_{W1\_flat}$. Remaining layers use non-centered $z$-matrices and vectors with shared log-normal scales and a single noise parameter $\sigma$. Again, Stan’s `reduce_sum` was used.
 
 ## MCMC Sampling
 
@@ -540,29 +542,22 @@ cat("\\end{minipage}\n")
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=1\textwidth]{../results/Figures/airfoil_pd_dei_01.png}
-  \caption{Partial Dependence, Original Initialization NN, Posterior Samples \& Posterior Mean for airfoil\_member01\_canon}
-  \label{fig:uci-pd-dei-01}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
   \includegraphics[width=1\textwidth]{../results/Figures/airfoil_pd_dei_02.png}
-  \caption{Partial Dependence, Original Initialization NN, Posterior Samples \& Posterior Mean for airfoil\_member02\_canon}
+  \caption{Partial dependence for \texttt{airfoil\_member02\_canon}: posterior samples and 90\,\% credible band widening where data variability is highest.}
   \label{fig:uci-pd-dei-02}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=1\textwidth]{../results/Figures/airfoil_pd_dei_03.png}
-  \caption{Partial Dependence, Original Initialization NN, Posterior Samples \& Posterior Mean for airfoil\_member03\_canon}
+  \caption{Partial dependence for \texttt{airfoil\_member03\_canon}: posterior samples and 90\,\% credible band widening where data variability is highest.}
   \label{fig:uci-pd-dei-03}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=1\textwidth]{../results/Figures/airfoil_pd_dei_04.png}
-  \caption{Partial Dependence, Original Initialization NN, Posterior Samples \& Posterior Mean for airfoil\_member04\_canon}
+  \caption{Partial dependence for \texttt{airfoil\_member04\_canon}: posterior samples and 90\,\% credible band widening where data variability is highest.}
   \label{fig:uci-pd-dei-04}
 \end{figure}
 
@@ -593,44 +588,61 @@ In sum, the air-foil experiment mainly exposes my computational budget, not a fu
 
 
 # Conclusion
-This study set out to test whether a Deep-Ensemble-Initialised MCMC (DEI-MCMC) workflow—including symmetry removal applied after ensembling—can turn fully Bayesian neural-network inference from a theoretical ideal into something that runs overnight on commodity hardware. By first training a handful of deterministic networks, collapsing permutation- and sign-flip symmetries via canonicalization, clustering the resulting weight vectors and then launching one NUTS chain per cluster, we deliberately separated the mode-finding and mode—exploring phases of inference. The abstract promise—efficient posterior exploration without surrendering exactness—has largely been borne out in practice.
+This study set out to test whether a Deep-Ensemble-Initialised Markov Chain Monte Carlo (DEI-MCMC) workflow—including symmetry removal applied after ensembling—can turn fully Bayesian neural-network inference from a theoretical ideal into something that runs overnight on standard consumer hardware. By first training a handful of deterministic networks, collapsing permutation- and sign-flip symmetries via canonicalization, clustering the resulting weight vectors and then launching one NUTS chain per cluster, I deliberately separated the mode-finding and mode-exploring phases of inference. The abstract promise—efficient posterior exploration without surrendering exactness—has largely been demonstrated in practice.
 
-In the synthetic sine experiment the four—member ensemble already landed on functionally distinct peaks of the posterior; canonicalization preserved those differences while removing spurious ones. Seeding NUTS at those locations produced healthy bulk-ESS values between ~75 and ~124 and a $\hat R$ of 1.05, indicating good within-mode mixing, yet the aggregated 90 % credibility band remained too tight—evidence that four chains still undersampled the true number of modes.
+In the simulation study, the four-member ensemble already landed on functionally distinct posterior peaks; canonicalization and clustering then preserved those genuine differences by collapsing only the symmetry-induced duplicates. In practice, the networks had largely converged to distinct modes on their own. Seeding NUTS at those locations produced healthy bulk-$ESS$ values between ~75 and ~124 and a $\hat R$ of 1.05, indicating good within-mode mixing, yet the aggregated 90 % credibility band remained too tight—evidence that four chains undersampled the true number of modes, leading to an underestimation of uncertainty.
 
-On the UCI Airfoil Self-Noise data the same machinery broadened the ensemble’s overly confident point forecasts into sensible posterior bands: uncertainty widened precisely where the raw networks disagreed most. At the same time the tougher, higher-dimensional posterior exposed a limitation of the current implementation: with only ~12 h CPU time per chain the bulk-ESS dropped below 41 and the pooled $\hat R$ rose to 2.10, signalling confined exploration within each basi.
+On the UCI Airfoil Self-Noise data the same approach broadened the ensemble’s overly confident point forecasts into sensible posterior bands: uncertainty widened precisely where the raw networks disagreed most. At the same time the tougher, higher-dimensional posterior exposed a limitation of the current implementation: with only ~12 h CPU time per chain the bulk-ESS dropped below 41 and the pooled $\hat R$ rose to 2.10, signalling confined exploration within each basin.
 
-Across both cases the symmetry-aware initialisation proved its worth: it removed redundant traversals of equivalent parameter states and gave every Monte-Carlo step a chance to learn something new about the functional landscape of the network. Where the workflow falls short, the bottlenecks are computational rather than conceptual: deeper data sets and richer priors simply demand either more chains, more samples, or faster hardware.
+Across both cases the symmetry-aware initialisation proved its worth: it removed redundant traversals of equivalent parameter states, in theory, and gave every Monte-Carlo step a chance to learn something new about the functional landscape of the network. Where the workflow falls short, the bottlenecks are computational rather than conceptual: deeper data sets and richer priors simply demand either more chains, more samples, or faster hardware.
 
 In sum, DEI-MCMC offers a principled, reproducible route to calibrated Bayesian predictions in moderately sized neural networks. Its present incarnation already outperforms a plain deep ensemble in uncertainty quality while adding only moderate overhead; its limitations are understood and, as the next section argues, eminently addressable.
 
 # Outlook
 Several avenues could extend this work from a proof-of-concept into a robust toolbox for large-scale Bayesian deep learning.
 
-First, larger and more diverse ensembles should reduce the risk of missing functionally unique modes. A systematic sweep that grows the ensemble size until additional members cease to enlarge the posterior support—measured, for example, by the clustering distances already used here—would quantify the diminishing returns of more seeds and help formalise the trade-off between number of chains and wall-clock time.
+First, larger and more diverse ensembles should reduce the risk of missing functionally unique modes. A systematic sweep that grows the ensemble size until additional members cease to enlarge the posterior support—measured, for example, by the clustering distances already used here—would quantify the diminishing returns of more seeds and help formalise the trade-off between number of chains and compute time.
 
-Second, recent findings on mode connectivity suggest that many apparent optima are merely well-separated points on a low-loss manifold (@garipov2018loss; @fort2019deep). Bridging canonicalised modes with curved “connectors” and letting HMC sample along those paths, rather than inside isolated basins, could turn disconnected weight-space islands into a single, traversable continent—potentially cutting the required number of chains even further.
+Second, recent findings on mode connectivity suggest that many apparent optima are merely well-separated points on a low-loss manifold (@garipov2018loss; @fort2019deep). Bridging canonicalized modes with curved “connectors” and letting HMC sample along those paths, rather than inside isolated basins, could merge formerly disconnected weight-space islands into a single, navigable region—potentially reducing the number of required chains even further.
 
 Third, the workflow now runs in Stan on a single CPU. Porting the model to GPU-enabled frameworks such as NumPyro, PyTorch + Pyro or TensorFlow Probability would make gradient evaluations orders of magnitude faster and unlock bigger architectures. Until Stan gains first-class CUDA support, a lightweight re-implementation of the canonicalization map in JAX followed by NumPyro’s GPU-native NUTS seems like the most direct path.
 
-Fourth, canonicalization is currently applied once, before sampling. Embedding a dynamic symmetry-resolution step into each leap-frog update could keep chains from drifting back into redundant regions and might improve mixing in the later layers, where over-parameterisation smooths the landscape but also multiplies symmetries.
+Fourth, canonicalization is currently applied once, before sampling. Embedding a dynamic lightweight symmetry-resolution step into each leap-frog update could keep chains from drifting back into redundant regions and might improve mixing in the later layers, where over-parameterisation smooths the landscape but also multiplies symmetries.
 
-Fifth, richer diagnostics tailored to multimodal, high-variance posteriors—such as the chain- and layer-wise $\hat R$ measure should accompany any scaling effort to ensure that increased throughput translates into genuinely better uncertainty estimates rather than a cascade of poorly mixed samples.
+Fifth, richer diagnostics tailored to multimodal, high-variance posteriors—such as the chain- and layer-wise $\hat R$ measure introduced by @wiese2023towards should accompany any scaling effort to ensure that increased throughput translates into genuinely better uncertainty estimates rather than a cascade of poorly mixed samples.
 
 Sixth, a growing body of work has investigated how many distinct modes are truly needed to approximate a complex posterior. @tiulpin2021greedy introduce a greedy, submodular selection scheme that sequentially adds ensemble members until the marginal gain in divergence falls below a threshold.
 
 Empirical studies have also shown that ensembles of only five to eight networks suffice to capture almost all of the gains from Bayesian marginalization in deep models (@ovadia2019can & @lakshminarayanan2016simple).
 
-Likewise, @lakshminarayanan2016simple show empirically that beyond three to five independent restarts, further ensemble members yield negligible improvement in uncertainty calibration or predictive performance. Incorporating such mode-stopping criteria into DEI-MCMC—stopping once the ensemble covers a pre-specified fraction of posterior support—could dramatically trim computational cost without sacrificing inferential quality.
+Likewise, @lakshminarayanan2016simple show empirically that beyond three to five independent restarts, further ensemble members yield negligible improvement in uncertainty calibration or predictive performance. Incorporating such mode-stopping criteria into DEI-MCMC—stopping once the ensemble covers a pre-specified fraction of the posterior probability mass—could dramatically trim computational cost without sacrificing inferential quality.
 
 Pursuing these threads—bigger ensembles, connector-aware sampling, GPU acceleration, dynamic symmetry resolution, richer diagnostics, and principled mode selection—promises to move Bayesian neural-network inference from the realm of careful case studies toward a routine option for real-world modelling.
 
 # Appendix
 
-GitHub Repo for this work: https://github.com/thomas-22/ProbML_SymmMC
+GitHub repo for this work: [thomas-22/ProbML_SymmMC](https://github.com/thomas-22/ProbML_SymmMC)
 
-![Posterior Predictive Sine Function](../results/Figures/synth_pp_sample_mean_4c.png){#fig-pp_synth_facet fig-cap="Posterior Predictive Sine Function." fig-align="center"}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=1\textwidth]{../results/Figures/synth_pp_sample_mean_4c.png}
+  \caption{Posterior predictive sine function.}
+  \label{fig:pp_synth_facet}
+\end{figure}
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=1\textwidth]{../results/Figures/traceplot_sigma_synthetic.png}
+  \caption{Traceplot of sigma for the synthetic dataset.}
+  \label{fig:trace_synthetic}
+\end{figure}
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=1\textwidth]{../results/Figures/traceplot_sigma_w1_airfoil.png}
+  \caption{Traceplot of sigma and $W_{1}[1,1]$ for the UCI Airfoil dataset.}
+  \label{fig:trace_airfoil}
+\end{figure}
 
 # References
 ::: {#refs}
@@ -641,7 +653,7 @@ GitHub Repo for this work: https://github.com/thomas-22/ProbML_SymmMC
 \addcontentsline{toc}{chapter}{Acknowledgements}
 I would like to express my deep gratitude to Prof.\ Dr.\ Bothmann for his invaluable guidance and support throughout the development of this work.
 
-My thanks also go to Lisa Wimmer for the enlightening lecture on uncertainty quantification delivered during our seminar.
+My thanks also go to Lisa Wimmer for the enlightening lecture on uncertainty delivered during our seminar.
 
 Finally, I thank my peers in the Probabilistic ML seminar for the thoughtful conversations and guidance, which helped me refine my approach.
 
@@ -659,9 +671,7 @@ of reproduction and usage, however, are not granted here. This paper was not
 previously presented to another examination board and has not been published.
 
 \vspace*{\fill}
-\noindent Munich, 04.07.2025
-
-\vspace{\baselineskip}
+\noindent Munich, 4. Juli 2025
 
 \begin{flushleft}
   \includegraphics[width=4cm,keepaspectratio]{signature.png}
@@ -682,5 +692,5 @@ All text in this report was initially drafted by hand, then partly rephrased by 
 
 All information was crosschecked manually with relevant verified sources.
 
-No AI‐generated content was used without rigurous oversight and revision through the author.  
+No AI‐generated content was used without rigorous oversight and revision through the author.  
 

@@ -530,7 +530,7 @@ compare_partial_dependence_models <- function(
     geom_line(data = pd_all,
               aes(x = Value, y = Predicted, color = Model),
               size = 1) +
-    facet_wrap(~ Feature, scales = "free_x", ncol = 4) +
+    facet_wrap(~ Feature, scales = "free_x", ncol = 3) +
     scale_color_brewer("Model", palette = "Dark2") +
     labs(
       title = "UCI Airfoil: Partial Dependence Comparison between all 4 NNs",

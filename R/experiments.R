@@ -187,10 +187,45 @@ mean(summarize_test$ess_bulk)
 
 
 
+#ALL LIBRARY CALLS:
+# Install and load CRAN packages if not already installed
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+library(ggplot2)
 
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+library(dplyr)
 
+if (!requireNamespace("tidyr", quietly = TRUE)) install.packages("tidyr")
+library(tidyr)
 
+if (!requireNamespace("purrr", quietly = TRUE)) install.packages("purrr")
+library(purrr)
 
+if (!requireNamespace("proxy", quietly = TRUE)) install.packages("proxy")
+library(proxy)
+
+if (!requireNamespace("posterior", quietly = TRUE)) install.packages("posterior")
+library(posterior)
+
+if (!requireNamespace("rlang", quietly = TRUE)) install.packages("rlang")
+library(rlang)
+
+# 'tools' is part of base R; no install required
+library(tools)
+
+# Install and load Keras (CRAN + Python backend) if not already installed
+if (!requireNamespace("keras", quietly = TRUE)) {
+  install.packages("keras")
+  keras::install_keras(envname = "r-tensorflow", method = "virtualenv")
+}
+library(keras)
+
+# Install and load CmdStanR (Stan interface) if not already installed
+if (!requireNamespace("cmdstanr", quietly = TRUE)) {
+  install.packages("cmdstanr",
+                   repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+}
+library(cmdstanr)
 
 
 
