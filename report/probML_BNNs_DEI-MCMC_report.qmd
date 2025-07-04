@@ -104,7 +104,7 @@ In a simulation study on a noisy sinusoidal function I tuned the workflow, teste
 
 ## Motivation
 
-A NN is a parametric function
+A neural network (NN) is a parametric function
 $$
 \begin{aligned}
 \quad
