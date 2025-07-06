@@ -306,7 +306,7 @@ kable(
   format   = "latex",
   booktabs = TRUE,
   digits   = 4,
-  caption  = "Pairwise cosine distances between canonical ensemble centroids"
+  caption  = "Pairwise cosine distances between canonical ensemble members on the synthetic dataset"
 )
 
 ```
@@ -450,7 +450,7 @@ kable(
   format   = "latex",
   booktabs = TRUE,
   digits   = 4,
-  caption  = "Pairwise cosine distances between canonical ensemble centroids"
+  caption  = "Pairwise cosine distances between canonical ensemble members on the UCI Airfoil dataset"
 ) %>%
   kable_styling(latex_options = "HOLD_position")
 
