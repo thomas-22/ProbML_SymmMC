@@ -167,11 +167,7 @@ even a tiny network exhibits many such symmetries.
 The first type of symmetry arises through neuron permutations. In any hidden layer, the perceptrons are exchangeable: if you permute the columns of $W^{(l)}$ and simultaneously permute the rows of $W^{(l+1)}$, the 
 overall function $f_{\theta}$ remains unchanged. The number of symmetries that arise through this mechanism is $$\prod_{\ell=1}^{L} n_\ell!.$$
 
-The second type of symmetry comes from sign flips: whenever the activation $\sigma$ is odd (e.g. tanh), you can pick any hidden neuron in layer $\ell$, multiply its incoming weights and bias by -1, and at the same time multiply its outgoing weights by -1, without changing $f_{\theta}$. Since each of the hidden neurons can be flipped independently, there are 
-$$2\sum_{\ell=1}^{L} n_\ell$$ 
-distinct sign-flip symmetries, creating a total of 
-
-$$2\sum_{\ell=1}^{L} n_\ell \prod_{\ell=1}^{L} n_\ell!$$ symmetrical modes.
+The second type of symmetry comes from sign flips: whenever the activation $\sigma$ is odd (e.g. tanh), you can pick any hidden neuron in layer $\ell$, multiply its incoming weights and bias by -1, and at the same time multiply its outgoing weights by -1, without changing $f_{\theta}$. Since each of the hidden neurons can be flipped independently, there are $$2^{\sum_{\ell=1}^{L}n_\ell}$$ distinct sign-flip symmetries, creating a total of $$\prod_{\ell=1}^{L} n_\ell! × 2^{\sum_{\ell=1}^{L}n_\ell}$$ symmetrical modes.
 
 If an MCMC sampler is unaware of these symmetries, it ends up wasting iterations on equi-output duplicates. This both inflates the apparent number of posterior modes and blows up parameter-space variance. Because these redundant draws add no new functional information, the effective sample size stalls, Monte Carlo error in credible-interval estimates grows, and the resulting intervals become too narrow—i.e. they underestimate the true aleatoric uncertainty.
 
@@ -272,8 +268,8 @@ For the simulation study I compute $\hat R$ and $ESS$ (Effective Sample Size) ac
 ### UCI Airfoil
 For the UCI Airfoil dataset, the same convergence checks and posterior summaries for the noise term ensure reliable mixing across four chains. Predictive bands and partial‐dependence intervals are then plotted over each feature, combining ensemble seeds and DEI‐MCMC draws to map uncertainty across the real‐world response surface. By mirroring the synthetic workflow’s focus on mixing diagnostics and functional credible bands, this evaluation highlights where airfoil predictions carry the greatest uncertainty.
 
-# Results
-## Results of DEI-MCMC in the Simulation Study
+# DEI-MCMC Results  
+## Simulation Study
 ### Ensemble & Canonicalization
 ```{r canon-distances-synth, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 library(proxy)
@@ -405,7 +401,7 @@ cat("\\end{minipage}\n")
 \end{figure}
 
 \newpage
-## Results of DEI-MCMC on the UCI Airfoil dataset
+## UCI Airfoil dataset
 ### Ensemble & Canonicalization
 
 \begin{figure}[H]
